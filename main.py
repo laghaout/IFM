@@ -46,46 +46,46 @@ class IFM:
         for k in range(self.modes - 1):
             self.bombs = np.kron(bombs[k], bombs[k+1])
         
-        # Overall quantum state
-        print('========== Before the first beam splitter')
-        self.input_state = np.kron(self.gamma, self.bombs)
-        self.rho = np.outer(self.input_state, self.input_state)
-
-        assert self.is_unitary(self.BS) and self.is_density_matrix(self.rho)
-
-        # Before the first beam splitter
-        self.plot(self.rho, 'Before the first beam splitter')   
-        self.print_states()
-        
         
     def __call__(self):
+
+        #%% Initial state
+        print('========== Initial state')
+        self.input_state = np.kron(self.gamma, self.bombs)
+        self.rho = np.outer(self.input_state, self.input_state)
+        assert self.is_unitary(self.BS) and self.is_density_matrix(self.rho)
         
-        # Before the interactions
-        print('\n========== Before the interactions')
+        self.plot(self.rho, 'Initial state')   
+        self.print_states()
+        
+        #%% After the first beam splitter
+        print('\n========== After the first beam splitter')
         BS = np.kron(self.BS, np.eye(self.bombs.shape[0]))
         assert self.is_unitary(BS)
         self.rho = BS @ self.rho @ np.conjugate(BS.T)
         assert self.is_density_matrix(self.rho)
-        self.plot(self.rho, 'Before the interactions')
+        self.plot(self.rho, 'After the first beam splitter')
         self.print_states()
     
-        # Before the second beam splitter
-        print('\n========== Before the second beam splitter')
+        #%% After the interactions
+        print('\n========== After the interactions')
         self.interac()
         assert self.is_density_matrix(self.rho)
         self.print_states()
             
-        # Before the measurements
-        print('\n========== Before the measurement')
+        #%% After the second beam splitter
+        print('\n========== After the second beam splitter')
         self.rho = BS @ self.rho @ np.conjugate(BS.T)
         assert self.is_density_matrix(self.rho)
-        self.plot(self.rho, 'Before the measurements') 
+        self.plot(self.rho, 'After the second beam splitter') 
         self.print_states()
     
-        # After the measurements
+        #%% After the measurements
         print('\n========== After the measurements')
         self.measurements = {
             i: np.zeros(self.modes + 1) for i in range(self.modes + 1)}
+        
+        # Form all the possible measurement operators.
         for k in self.measurements.keys():
             self.measurements[k][k] = 1
             self.measurements[k] = np.outer(self.measurements[k], 
@@ -94,20 +94,28 @@ class IFM:
 
         # TODO: Check the validity of the measurement operator.
 
-        self.probabilities = {
-            m: np.trace(self.measurements[m] @ self.rho) 
-            for m in self.measurements.keys()}
-        self.post_rho = {
-            m: self.measurements[m] @ self.rho @ self.measurements[m]/self.probabilities[m]
-            for m in self.measurements.keys()}
-        for post_rho in self.post_rho.values():
-            assert self.is_density_matrix(post_rho)
-        assert abs(1 - sum(self.probabilities.values())) < TOL
+        # Compute the probabilities for each measurement.
+        self.probabilities = {m: np.trace(self.measurements[m] @ self.rho) 
+                              for m in self.measurements.keys()}
+        assert abs(1 - sum(self.probabilities.values())) < TOL        
+        
+        # Compute the post-measurement states for each measurement.
+        self.post_rho = {m: None for m in self.measurements.keys()}
+        for m in self.post_rho.keys():           
+            if self.probabilities[m] > TOL:
+                print('GOOD:')
+                self.post_rho[m] = self.measurements[m] @ self.rho @ self.measurements[m]/self.probabilities[m]
+                
+            else:
+                print('BAD:')
+                self.post_rho[m] = None
 
-        # Report
-        for k, v in self.probabilities.items():
-            print(f"\n===== Prob({k}): {round(v,3)} =====")
-            self.print_states(self.post_rho[k], self.modes, self.dims)
+            assert self.is_density_matrix(self.post_rho[m])
+
+            print(f"\n===== Prob({m}): {round(self.probabilities[m],3)} =====")
+            self.print_states(self.post_rho[m], self.modes, self.dims)
+        
+        
     
     def interac(self):
 
