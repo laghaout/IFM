@@ -14,12 +14,24 @@ class IFM:
     
     def __init__(
             self, 
-            gamma=np.array([0,1,0]), 
-            bombs=(np.array([0,0,1]),)*2,  # Both cleared
-            # bombs=(np.array([0,1,0]),)*2,  # Both blocked
-            # bombs=(np.array([0,0,1]), np.array([0,1,0])),  # Cleared-blocked
-            # bombs=(np.array([0,1,0]), np.array([0,0,1])),  # Blocked-cleared            
-            # bombs=(np.array([0,1,1])/np.sqrt(2), np.array([0,1,1])/np.sqrt(2)),  # Equal
+            # Two modes
+            # gamma=np.array([0,1,0]), 
+            # bombs=(np.array([0,0,1]),)*2,  # all cleared
+            # bombs=(np.array([0,1,0]),)*2,  # all blocked
+            # bombs=(np.array([0,0,1]), np.array([0,1,0])),  # cleared-blocked
+            # bombs=(np.array([0,1,0]), np.array([0,0,1])),  # blocked-cleared
+            # bombs=(np.array([0,1,1])/np.sqrt(2), np.array([0,0,1])),  # equal-cleared
+            # bombs=(np.array([0,0,1]), np.array([0,1,1])/np.sqrt(2)),  # cleared-equal
+            # bombs=(np.array([0,1,1])/np.sqrt(2),)*2,  # Equal-equal
+            # Three modes
+            gamma=np.array([0,1,0,0]), 
+            # bombs=(np.array([0,0,1]),)*3,  # All-cleared
+            # bombs=(np.array([0,1,0]),)*3,  # All-blocked
+            # bombs=(np.array([0,1,1])/np.sqrt(2),)*2+(np.array([0,0,1]),),  # equal-equal-cleared
+            # bombs=(np.array([0,1,1])/np.sqrt(2),)+(np.array([0,0,1]),)*2,  # equal-cleared-cleared
+            # bombs=(np.array([0,1,0]),)+(np.array([0,0,1]),)*2,  # blocked-cleared-cleared
+            # bombs=(np.array([0,1,0]),)*2+(np.array([0,0,1]),),  # blocked-blocked-cleard
+            bombs=(np.array([0,1,1])/np.sqrt(2),)*3,  # equal-equal-equal
             ):
         
         self.dims = []  # Dimension of the Hilbert subspaces
@@ -32,20 +44,21 @@ class IFM:
             self.BS = np.array([[np.sqrt(2), 0, 0], 
                                 [0, 1, 1], 
                                 [0, 1, -1]])/np.sqrt(2)
+        elif self.modes == 3:
+            alpha = (-1 + 1j*np.sqrt(3))/2
+            self.BS = np.array([[np.sqrt(3), 0, 0, 0], 
+                                [0, 1, 1, 1], 
+                                [0, 1, alpha, alpha**2], 
+                                [0, 1, alpha**2, alpha**4]])/np.sqrt(3)            
 
-
-        
-        print(type(self.BS), type(self.modes))
-
-        assert self.modes == self.BS.shape[0] - 1 
+        assert self.modes == self.BS.shape[0] - 1
+        assert self.is_unitary(self.BS)
 
         # Construct the bomb state vector.
-        bombs = self.bombs
         self.dims += [bomb.shape[0] for bomb in self.bombs]
         self.bombs = bombs[0]
         for k in range(self.modes - 1):
-            self.bombs = np.kron(bombs[k], bombs[k+1])
-        
+            self.bombs = np.kron(self.bombs, bombs[k+1])
         
     def __call__(self):
 
@@ -53,10 +66,12 @@ class IFM:
         print('========== Initial state')
         self.input_state = np.kron(self.gamma, self.bombs)
         self.rho = np.outer(self.input_state, self.input_state)
+        # print('>>', self.rho.shape, self.dims)
+        # print(self.gamma.shape, self.bombs.shape, self.input_state.shape)
         assert self.is_unitary(self.BS) and self.is_density_matrix(self.rho)
         
         self.plot(self.rho, 'Initial state')   
-        self.print_states()
+        self.print_states(self.rho, self.modes, self.dims)    
         
         #%% After the first beam splitter
         print('\n========== After the first beam splitter')
@@ -65,20 +80,20 @@ class IFM:
         self.rho = BS @ self.rho @ np.conjugate(BS.T)
         assert self.is_density_matrix(self.rho)
         self.plot(self.rho, 'After the first beam splitter')
-        self.print_states()
+        self.print_states(self.rho, self.modes, self.dims)    
     
         #%% After the interactions
         print('\n========== After the interactions')
         self.interac()
         assert self.is_density_matrix(self.rho)
-        self.print_states()
+        self.print_states(self.rho, self.modes, self.dims)    
             
         #%% After the second beam splitter
         print('\n========== After the second beam splitter')
         self.rho = BS @ self.rho @ np.conjugate(BS.T)
         assert self.is_density_matrix(self.rho)
         self.plot(self.rho, 'After the second beam splitter') 
-        self.print_states()
+        self.print_states(self.rho, self.modes, self.dims)    
     
         #%% After the measurements
         print('\n========== After the measurements')
@@ -103,16 +118,12 @@ class IFM:
         self.post_rho = {m: None for m in self.measurements.keys()}
         for m in self.post_rho.keys():           
             if self.probabilities[m] > TOL:
-                print('GOOD:')
                 self.post_rho[m] = self.measurements[m] @ self.rho @ self.measurements[m]/self.probabilities[m]
-                
+                assert self.is_density_matrix(self.post_rho[m])                
             else:
-                print('BAD:')
                 self.post_rho[m] = None
 
-            assert self.is_density_matrix(self.post_rho[m])
-
-            print(f"\n===== Prob({m}): {round(self.probabilities[m],3)} =====")
+            print(f"\n===== Prob({m}): {np.round(self.probabilities[m],3)} =====")
             self.print_states(self.post_rho[m], self.modes, self.dims)
         
         
@@ -154,7 +165,7 @@ class IFM:
             
         
     def interac_helper(self, mode, status):
-        
+        # TODO: What is going on here?
         if status is False:
             state = np.array([0, 1, 0])
         else:
@@ -184,7 +195,8 @@ class IFM:
         
         # Use Matplotlib to render the array with a grid
         fig, ax = plt.subplots()
-        cax = ax.matshow(rho, cmap='viridis')
+        # TODO: Should I also draw the imaginary part?
+        cax = ax.matshow(rho.real, cmap='viridis')  
         
         # Add color bar
         plt.colorbar(cax)
@@ -223,18 +235,16 @@ class IFM:
         # Use np.allclose to check if matrices are close within the specified tolerance
         return np.allclose(product, identity, atol=tol)
 
-    def print_states(self, rho=None, modes=None, dims=None):
+    def print_states(self, rho, modes, dims):
     
         if rho is None:
-            rho = self.rho
-            modes = self.modes
-            dims = self.dims
-    
-        print('Photon:')
-        print(self.partial_trace(rho, [0], dims))
-        for k in range(modes):
-            print(f'Bomb {k+1}:')
-            print(self.partial_trace(rho, [k+1], dims))
+            print('Impossible scenario.')
+        else:
+            print('Photon:')
+            print(np.round(self.partial_trace(rho, [0], dims), 3))
+            for k in range(modes):
+                print(f'Bomb {k+1}:')
+                print(np.round(self.partial_trace(rho, [k+1], dims), 3))
     
     @staticmethod
     def partial_trace(rho, keep, dims, optimize=False):
@@ -290,5 +300,4 @@ my_system = IFM()
 my_system()
 measurements = my_system.measurements
 probabilities = my_system.probabilities
-
-    
+post_rho = my_system.post_rho
