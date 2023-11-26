@@ -2,7 +2,7 @@
 """
 Created on Sun Oct 29 14:04:59 2023
 
-@author: amine
+@author: Amine Laghaout
 """
 
 import numpy as np
@@ -24,14 +24,19 @@ class IFM:
             # bombs=(np.array([0,0,1]), np.array([0,1,1])/np.sqrt(2)),  # cleared-equal
             # bombs=(np.array([0,1,1])/np.sqrt(2),)*2,  # Equal-equal
             # Three modes
-            gamma=np.array([0,1,0,0]), 
+            # gamma=np.array([0,1,0,0]), 
             # bombs=(np.array([0,0,1]),)*3,  # All-cleared
             # bombs=(np.array([0,1,0]),)*3,  # All-blocked
             # bombs=(np.array([0,1,1])/np.sqrt(2),)*2+(np.array([0,0,1]),),  # equal-equal-cleared
             # bombs=(np.array([0,1,1])/np.sqrt(2),)+(np.array([0,0,1]),)*2,  # equal-cleared-cleared
             # bombs=(np.array([0,1,0]),)+(np.array([0,0,1]),)*2,  # blocked-cleared-cleared
             # bombs=(np.array([0,1,0]),)*2+(np.array([0,0,1]),),  # blocked-blocked-cleard
-            bombs=(np.array([0,1,1])/np.sqrt(2),)*3,  # equal-equal-equal
+            # bombs=(np.array([0,1,1])/np.sqrt(2),)*3,  # equal-equal-equal
+            # Four modes
+            gamma=np.array([0,1,0,0, 0]), 
+            # bombs=(np.array([0,1,1])/np.sqrt(2),)*4,  # all equal
+            bombs=(np.array([0,1,0]),)+(np.array([0,0,1]),)*3,  # one blocked
+            # bombs=(np.array([0,1,0]),)+(np.array([0,1,1])/np.sqrt(2),)*3 # one blocked-equal
             ):
         
         self.dims = []  # Dimension of the Hilbert subspaces
@@ -39,18 +44,8 @@ class IFM:
         self.dims += [self.gamma.shape[0]] 
         self.bombs = bombs  # Bomb states
         self.modes = len(self.gamma) - 1  # Number of interferometer arms
-
-        if self.modes == 2:
-            self.BS = np.array([[np.sqrt(2), 0, 0], 
-                                [0, 1, 1], 
-                                [0, 1, -1]])/np.sqrt(2)
-        elif self.modes == 3:
-            alpha = (-1 + 1j*np.sqrt(3))/2
-            self.BS = np.array([[np.sqrt(3), 0, 0, 0], 
-                                [0, 1, 1, 1], 
-                                [0, 1, alpha, alpha**2], 
-                                [0, 1, alpha**2, alpha**4]])/np.sqrt(3)            
-
+            
+        self.BS = self.symmetric_BS(self.modes)
         assert self.modes == self.BS.shape[0] - 1
         assert self.is_unitary(self.BS)
 
@@ -68,10 +63,11 @@ class IFM:
         self.rho = np.outer(self.input_state, self.input_state)
         # print('>>', self.rho.shape, self.dims)
         # print(self.gamma.shape, self.bombs.shape, self.input_state.shape)
-        assert self.is_unitary(self.BS) and self.is_density_matrix(self.rho)
+        assert self.is_density_matrix(self.rho)
+        assert self.is_unitary(self.BS) 
         
-        self.plot(self.rho, 'Initial state')   
-        self.print_states(self.rho, self.modes, self.dims)    
+        # self.plot(self.rho, 'Initial state')   
+        self.print_states(self.rho, self.modes, self.dims)   
         
         #%% After the first beam splitter
         print('\n========== After the first beam splitter')
@@ -79,7 +75,7 @@ class IFM:
         assert self.is_unitary(BS)
         self.rho = BS @ self.rho @ np.conjugate(BS.T)
         assert self.is_density_matrix(self.rho)
-        self.plot(self.rho, 'After the first beam splitter')
+        # self.plot(self.rho, 'After the first beam splitter')
         self.print_states(self.rho, self.modes, self.dims)    
     
         #%% After the interactions
@@ -92,7 +88,7 @@ class IFM:
         print('\n========== After the second beam splitter')
         self.rho = BS @ self.rho @ np.conjugate(BS.T)
         assert self.is_density_matrix(self.rho)
-        self.plot(self.rho, 'After the second beam splitter') 
+        # self.plot(self.rho, 'After the second beam splitter') 
         self.print_states(self.rho, self.modes, self.dims)    
     
         #%% After the measurements
@@ -112,7 +108,7 @@ class IFM:
         # Compute the probabilities for each measurement.
         self.probabilities = {m: np.trace(self.measurements[m] @ self.rho) 
                               for m in self.measurements.keys()}
-        assert abs(1 - sum(self.probabilities.values())) < TOL        
+        assert abs(1 - sum(self.probabilities.values())) < TOL   
         
         # Compute the post-measurement states for each measurement.
         self.post_rho = {m: None for m in self.measurements.keys()}
@@ -125,22 +121,32 @@ class IFM:
 
             print(f"\n===== Prob({m}): {np.round(self.probabilities[m],3)} =====")
             self.print_states(self.post_rho[m], self.modes, self.dims)
+
+    @staticmethod        
+    def symmetric_BS(N, add_explosion_mode=True):
         
-        
+        a = 2*np.pi/N
+        a = np.cos(a) + 1j*np.sin(a)    
+        BS = np.array([[a**(r*c) for c in range(N)] for r in range(N)])
+        if add_explosion_mode:
+            BS = np.concatenate((np.zeros((N, 1)), BS), axis=1)
+            BS = np.concatenate((np.zeros((1, N+1)), BS), axis=0)
+            BS[0,0] = np.sqrt(N)
+        BS /=  np.sqrt(N)
+        return BS       
     
     def interac(self):
 
         rho = self.rho.copy()  # TODO: Move outside the loop.        
 
         for mode in range(1, self.modes + 1):
-
-            print(f'Interaction at mode {mode}:')
                    
             # Transitions
             starting_states = self.interac_helper(mode, False)        
             ending_states = self.interac_helper(mode, True)            
             state_transitions = list(zip(starting_states, ending_states))
-            print(state_transitions)
+            # print(f'Interaction at mode {mode}:')
+            # print(state_transitions)
             
             C = np.eye(self.rho.shape[0])
             
@@ -298,6 +304,37 @@ class IFM:
         
 my_system = IFM()
 my_system()
+BS = my_system.BS
 measurements = my_system.measurements
 probabilities = my_system.probabilities
 post_rho = my_system.post_rho
+
+#%%
+
+def plot_probabilities(data_dict):
+
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    
+    # Extract keys and values from the dictionary
+    keys = list(data_dict.keys())
+    values = list(data_dict.values())
+    
+    # Create a Seaborn histogram
+    sns.set(style="whitegrid")  # Set the style of the plot
+    plt.figure(figsize=(10, 6))  # Set the figure size (adjust as needed)
+    
+    # Create the histogram using Seaborn
+    sns.barplot(x=keys, y=values)
+    
+    # Set labels and title
+    plt.xlabel('Labels')
+    plt.ylabel('Values')
+    plt.title('Histogram of Dictionary Values')
+    
+    # Show the plot
+    plt.xticks(rotation=45)  # Rotate x-axis labels for better readability
+    plt.tight_layout()  # Ensure all elements are visible
+    plt.show()
+
+plot_probabilities(my_system.probabilities)
