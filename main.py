@@ -7,37 +7,23 @@ Created on Sun Oct 29 14:04:59 2023
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 TOL = 1e-14
 
 class IFM:
     
-    def __init__(
-            self, 
-            # Two modes
-            # gamma=np.array([0,1,0]), 
-            # bombs=(np.array([0,0,1]),)*2,  # all cleared
-            # bombs=(np.array([0,1,0]),)*2,  # all blocked
-            # bombs=(np.array([0,0,1]), np.array([0,1,0])),  # cleared-blocked
-            # bombs=(np.array([0,1,0]), np.array([0,0,1])),  # blocked-cleared
-            # bombs=(np.array([0,1,1])/np.sqrt(2), np.array([0,0,1])),  # equal-cleared
-            # bombs=(np.array([0,0,1]), np.array([0,1,1])/np.sqrt(2)),  # cleared-equal
-            # bombs=(np.array([0,1,1])/np.sqrt(2),)*2,  # Equal-equal
-            # Three modes
-            # gamma=np.array([0,1,0,0]), 
-            # bombs=(np.array([0,0,1]),)*3,  # All-cleared
-            # bombs=(np.array([0,1,0]),)*3,  # All-blocked
-            # bombs=(np.array([0,1,1])/np.sqrt(2),)*2+(np.array([0,0,1]),),  # equal-equal-cleared
-            # bombs=(np.array([0,1,1])/np.sqrt(2),)+(np.array([0,0,1]),)*2,  # equal-cleared-cleared
-            # bombs=(np.array([0,1,0]),)+(np.array([0,0,1]),)*2,  # blocked-cleared-cleared
-            # bombs=(np.array([0,1,0]),)*2+(np.array([0,0,1]),),  # blocked-blocked-cleard
-            # bombs=(np.array([0,1,1])/np.sqrt(2),)*3,  # equal-equal-equal
-            # Four modes
-            gamma=np.array([0,1,0,0, 0]), 
-            # bombs=(np.array([0,1,1])/np.sqrt(2),)*4,  # all equal
-            bombs=(np.array([0,1,0]),)+(np.array([0,0,1]),)*3,  # one blocked
-            # bombs=(np.array([0,1,0]),)+(np.array([0,1,1])/np.sqrt(2),)*3 # one blocked-equal
-            ):
+    def __init__(self, bombs, gamma=1):
+        
+        if isinstance(gamma, np.ndarray) and isinstance(bombs, tuple):
+            assert gamma.shape[0] == len(bombs) + 1
+            for bomb in bombs: 
+                assert isinstance(bomb, np.ndarray)
+        elif isinstance(bombs, str):
+            bombs = tuple(self.parse_bombs(b) for b in bombs)
+            gamma_temp = np.zeros(len(bombs)+1)
+            gamma_temp[gamma] = 1
+            gamma = gamma_temp
         
         self.dims = []  # Dimension of the Hilbert subspaces
         self.gamma = gamma  # Photonic state over the modes
@@ -55,41 +41,52 @@ class IFM:
         for k in range(self.modes - 1):
             self.bombs = np.kron(self.bombs, bombs[k+1])
         
-    def __call__(self):
+    def __call__(self, interact=True, verbose=False):
 
         #%% Initial state
-        print('========== Initial state')
+        
         self.input_state = np.kron(self.gamma, self.bombs)
         self.rho = np.outer(self.input_state, self.input_state)
         # print('>>', self.rho.shape, self.dims)
         # print(self.gamma.shape, self.bombs.shape, self.input_state.shape)
         assert self.is_density_matrix(self.rho)
         assert self.is_unitary(self.BS) 
-        
-        # self.plot(self.rho, 'Initial state')   
-        self.print_states(self.rho, self.modes, self.dims)   
+
+        if verbose:
+            print('========== Initial state')
+            # self.plot(self.rho, 'Initial state')   
+            self.print_states(self.rho, self.modes, self.dims)   
         
         #%% After the first beam splitter
-        print('\n========== After the first beam splitter')
+        
         BS = np.kron(self.BS, np.eye(self.bombs.shape[0]))
         assert self.is_unitary(BS)
         self.rho = BS @ self.rho @ np.conjugate(BS.T)
         assert self.is_density_matrix(self.rho)
-        # self.plot(self.rho, 'After the first beam splitter')
-        self.print_states(self.rho, self.modes, self.dims)    
+        
+        if verbose:
+            print('\n========== After the first beam splitter')
+            # self.plot(self.rho, 'After the first beam splitter')
+            self.print_states(self.rho, self.modes, self.dims)    
     
         #%% After the interactions
-        print('\n========== After the interactions')
-        self.interac()
-        assert self.is_density_matrix(self.rho)
-        self.print_states(self.rho, self.modes, self.dims)    
+        if interact:
+            self.interac()
+            assert self.is_density_matrix(self.rho)
+            
+            if verbose:
+                print('\n========== After the interactions')
+                self.print_states(self.rho, self.modes, self.dims)    
             
         #%% After the second beam splitter
-        print('\n========== After the second beam splitter')
+        
         self.rho = BS @ self.rho @ np.conjugate(BS.T)
         assert self.is_density_matrix(self.rho)
-        # self.plot(self.rho, 'After the second beam splitter') 
-        self.print_states(self.rho, self.modes, self.dims)    
+        
+        if verbose:
+            print('\n========== After the second beam splitter')
+            # self.plot(self.rho, 'After the second beam splitter') 
+            self.print_states(self.rho, self.modes, self.dims)    
     
         #%% After the measurements
         print('\n========== After the measurements')
@@ -109,6 +106,7 @@ class IFM:
         self.probabilities = {m: np.trace(self.measurements[m] @ self.rho) 
                               for m in self.measurements.keys()}
         assert abs(1 - sum(self.probabilities.values())) < TOL   
+        self.plot_probabilities(self.probabilities)
         
         # Compute the post-measurement states for each measurement.
         self.post_rho = {m: None for m in self.measurements.keys()}
@@ -122,6 +120,21 @@ class IFM:
             print(f"\n===== Prob({m}): {np.round(self.probabilities[m],3)} =====")
             self.print_states(self.post_rho[m], self.modes, self.dims)
 
+    @staticmethod
+    def parse_bombs(bomb):
+        # 'C'leared: The is a bomb remotely and the vacuum locally.
+        if bomb.upper() == 'C':
+            return np.array([0, 0, 1])
+        # 'B'locked: There is a bomb locally and the vacuum remotely.
+        elif bomb.upper() == 'B': 
+            return np.array([0, 1, 0])
+        # 'E'qual: There is a bomb that in a superposition of being local and 
+        # remote.
+        elif bomb.upper() == 'E':
+            return np.array([0, 1, 1])/np.sqrt(2)
+        else:
+            assert False, "Wrong letter coding for the bomb"
+        
     @staticmethod        
     def symmetric_BS(N, add_explosion_mode=True):
         
@@ -243,14 +256,38 @@ class IFM:
 
     def print_states(self, rho, modes, dims):
     
+        self.subrho = {}
+    
         if rho is None:
             print('Impossible scenario.')
         else:
-            print('Photon:')
-            print(np.round(self.partial_trace(rho, [0], dims), 3))
+            subrho = self.partial_trace(rho, [0], dims)
+            assert self.is_density_matrix(subrho)
+            purity = self.purity(subrho)
+            print('photon:', np.round(purity, 4)) 
+            print(np.round(subrho, 3))
+            self.subrho['photon'] = {i: d for i, d in enumerate(subrho.diagonal())}
+            self.subrho['photon'] = self.subrho['photon'].update({'purity': purity})
             for k in range(modes):
-                print(f'Bomb {k+1}:')
-                print(np.round(self.partial_trace(rho, [k+1], dims), 3))
+                subrho = self.partial_trace(rho, [k+1], dims)
+                assert self.is_density_matrix(subrho)
+                purity = self.purity(subrho)
+                print(f'bomb {k+1}:', np.round(purity, 4))
+                print(np.round(subrho, 3))
+                self.subrho[f'bomb {k+1}:'] = {i: d for i, d in enumerate(subrho.diagonal())}
+                self.subrho[f'bomb {k+1}:'] = self.subrho[f'bomb {k+1}:'].update({'purity': purity})
+                
+            self.subrho = pd.DataFrame(self.subrho)
+            self.subrho = self.subrho.transpose()
+
+    
+    @staticmethod
+    def purity(rho, tol=TOL):
+        
+        purity = np.trace(rho @ rho)
+        if purity.imag < tol:
+            purity = purity.real
+        return purity
     
     @staticmethod
     def partial_trace(rho, keep, dims, optimize=False):
@@ -300,41 +337,51 @@ class IFM:
         # for k in range(len(X)-1):
         #     Y = np.kron(Y, X[k+1])
         # print(partial_trace(Y, [1], [3,4,2,3,7]))
-
         
-my_system = IFM()
+    @staticmethod
+    def plot_probabilities(data_dict):
+    
+        import seaborn as sns
+        import matplotlib.pyplot as plt
+        
+        # Extract keys and values from the dictionary
+        keys = list(data_dict.keys())
+        values = list(data_dict.values())
+        
+        # Create a Seaborn histogram
+        sns.set(style="whitegrid", 
+                rc={"font.size": 15, "axes.titlesize": 15, "axes.labelsize": 15})
+        # plt.figure(figsize=(10, 6))  # Set the figure size (adjust as needed)
+        
+        # Create the histogram using Seaborn
+        sns.barplot(x=keys, y=values, 
+                    palette=['darkred']+['darkblue']*(len(data_dict)-1))
+        
+        # Set labels and title
+        plt.xlabel('Mode')
+        plt.ylabel('Probability')
+        plt.title('Path-encoded measurement probabilities')
+        
+        # Show the plot
+        # plt.xticks()  # Rotate x-axis labels for better readability
+        plt.tight_layout()  # Ensure all elements are visible
+        plt.show()
+
+
+#%% Run
+       
+my_system = IFM('eee', 3)
 my_system()
-BS = my_system.BS
 measurements = my_system.measurements
 probabilities = my_system.probabilities
 post_rho = my_system.post_rho
+subrho = my_system.subrho
 
 #%%
 
-def plot_probabilities(data_dict):
 
-    import seaborn as sns
-    import matplotlib.pyplot as plt
-    
-    # Extract keys and values from the dictionary
-    keys = list(data_dict.keys())
-    values = list(data_dict.values())
-    
-    # Create a Seaborn histogram
-    sns.set(style="whitegrid")  # Set the style of the plot
-    plt.figure(figsize=(10, 6))  # Set the figure size (adjust as needed)
-    
-    # Create the histogram using Seaborn
-    sns.barplot(x=keys, y=values)
-    
-    # Set labels and title
-    plt.xlabel('Labels')
-    plt.ylabel('Values')
-    plt.title('Histogram of Dictionary Values')
-    
-    # Show the plot
-    plt.xticks(rotation=45)  # Rotate x-axis labels for better readability
-    plt.tight_layout()  # Ensure all elements are visible
-    plt.show()
 
-plot_probabilities(my_system.probabilities)
+
+# TODO: Do the same for the purities
+
+# A = (np.outer(np.array([1, 1])/np.sqrt(2), np.array([1, 1])/np.sqrt(2)) + np.outer(np.array([0, 1]), np.array([0, 1])))/2; print(A)
