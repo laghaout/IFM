@@ -31,3 +31,6 @@ RUN pip3 install protobuf==3.20.*
 
 # Install the local package.
 COPY . .
+
+# Sets up the entry point to invoke the trainer.
+ENTRYPOINT ["python3", "ifm/main.py"]
