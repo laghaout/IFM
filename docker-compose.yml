@@ -1,0 +1,16 @@
+version: '0'
+services:
+  ifm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: $IMAGE_URI
+    entrypoint: /bin/bash
+    working_dir: /home/
+    tty: true
+    stdin_open: true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"

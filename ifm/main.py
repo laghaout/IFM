@@ -5,37 +5,73 @@ Created on Sun Oct 29 14:04:59 2023
 @author: Amine Laghaout
 """
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
-
-TOL = 1e-14
 
 class IFM:
     
-    def __init__(self, bombs, gamma=1):
+    def __init__(self, bombs, gamma=1, tol = 1e-14):
+        """
+        Parameters
+        ----------
+        bombs : tuple of np.ndarray or str
+            Quantum states of the bombs. These can be specified explicitly in a
+            tuple of NumPy arrays or as a string of characters where 
+            - 'c' represents that the bomb is "cleared" from the photon's path, 
+            - 'b' represents that the bomb is "blocking" the photon's path, and
+            - 'w' represents that the bomb is in a coherent superposition of 
+              being in the photon's path and away from the photon's path. 
+            Each bomb lives in a 3-dimensional Hilbert space where
+            - dimension 0 represents the exploded bomb,
+            - dimension 1 represents the bomb in the photon's path, and
+            - dimension 2 represents the bomb away from the photon's path.
+            There are `N` bombs.
+        gamma : np.ndarray or int, optional
+            Quantum state of the incident photon. It can be specified 
+            explicitly in Hilbert space as as nd.ndarray or implicitly as an 
+            integer specifying which path is excited by the photon (with all
+            other paths assumed to be empty.)
+            The photon lives in a 3-dimensional Hilbert space where
+            - dimension 0 means that the photon was absorbed by a bomb,
+            - dimension `k` means that the photon travels in path `k` of the
+              `N`-armed Mach-Zehnder interferometer.
+        tol : float, optional
+            Numerical tolerance.
+
+        Returns
+        -------
+        None.
+        """
         
-        if isinstance(gamma, np.ndarray) and isinstance(bombs, tuple):
-            assert gamma.shape[0] == len(bombs) + 1
-            for bomb in bombs: 
-                assert isinstance(bomb, np.ndarray)
-        elif isinstance(bombs, str):
+        # If the bombs are represented by a string of characters and the 
+        # photon by the path it is exciting, generate the corresponding state
+        # vectors
+        if isinstance(bombs, str) and isinstance(gamma, int):
             bombs = tuple(self.parse_bombs(b) for b in bombs)
             gamma_temp = np.zeros(len(bombs)+1)
             gamma_temp[gamma] = 1
             gamma = gamma_temp
+
+        # Ensure the number of bombs is equal to the number of photon paths.
+        assert gamma.shape[0] == len(bombs) + 1
+        for bomb in bombs: 
+            assert isinstance(bomb, np.ndarray)
         
-        self.dims = []  # Dimension of the Hilbert subspaces
-        self.gamma = gamma  # Photonic state over the modes
-        self.dims += [self.gamma.shape[0]] 
-        self.bombs = bombs  # Bomb states
-        self.modes = len(self.gamma) - 1  # Number of interferometer arms
-            
+        self.tol = tol                      # Numerical tolerance
+        self.gamma = gamma                  # Photonic state over the modes
+        self.dims = [self.gamma.shape[0]]   # Dimensions of the Hilbert spaces
+        self.bombs = bombs                  # Bomb states
+        self.modes = len(self.gamma) - 1    # Number of photon paths
+        
+        # Construct a symmetric `N`-mode beam splitter. Note that this beam 
+        # splitter has one extra dimension to account for the fact that the 
+        # incident vacuum remains unchanged.
         self.BS = self.symmetric_BS(self.modes)
         assert self.modes == self.BS.shape[0] - 1
         assert self.is_unitary(self.BS)
 
-        # Construct the bomb state vector.
+        # Construct the overall bomb state vector.
         self.dims += [bomb.shape[0] for bomb in self.bombs]
         self.bombs = bombs[0]
         for k in range(self.modes - 1):
@@ -45,16 +81,12 @@ class IFM:
 
         #%% Initial state
         
-        self.input_state = np.kron(self.gamma, self.bombs)
-        self.rho = np.outer(self.input_state, self.input_state)
-        # print('>>', self.rho.shape, self.dims)
-        # print(self.gamma.shape, self.bombs.shape, self.input_state.shape)
+        input_state = np.kron(self.gamma, self.bombs)
+        self.rho = np.outer(input_state, input_state)
         assert self.is_density_matrix(self.rho)
-        assert self.is_unitary(self.BS) 
 
         if verbose:
             print('========== Initial state')
-            # self.plot(self.rho, 'Initial state')   
             self.print_states(self.rho, self.modes, self.dims)   
         
         #%% After the first beam splitter
@@ -66,17 +98,18 @@ class IFM:
         
         if verbose:
             print('\n========== After the first beam splitter')
-            # self.plot(self.rho, 'After the first beam splitter')
             self.print_states(self.rho, self.modes, self.dims)    
     
         #%% After the interactions
+        
         if interact:
-            self.interac()
+            # TODO: Check the order of the interactions does not matter.
+            self.interac()  
             assert self.is_density_matrix(self.rho)
             
             if verbose:
                 print('\n========== After the interactions')
-                self.print_states(self.rho, self.modes, self.dims)    
+                self.print_states(self.rho, self.modes, self.dims)
             
         #%% After the second beam splitter
         
@@ -85,40 +118,43 @@ class IFM:
         
         if verbose:
             print('\n========== After the second beam splitter')
-            # self.plot(self.rho, 'After the second beam splitter') 
             self.print_states(self.rho, self.modes, self.dims)    
     
         #%% After the measurements
+        
         print('\n========== After the measurements')
+        
+        # Compute photon measurement operators in the Fock basis.
         self.measurements = {
             i: np.zeros(self.modes + 1) for i in range(self.modes + 1)}
-        
-        # Form all the possible measurement operators.
         for k in self.measurements.keys():
+            # Pick the `k`-th mode of the photon.
             self.measurements[k][k] = 1
             self.measurements[k] = np.outer(self.measurements[k], 
                                             self.measurements[k])
-            self.measurements[k] = np.kron(self.measurements[k], np.eye(len(self.bombs)))
+            # The Hilbert space of the bombs is not projected upon.
+            self.measurements[k] = np.kron(
+                self.measurements[k], np.eye(len(self.bombs)))
 
-        # TODO: Check the validity of the measurement operator.
+            # TODO: Check the validity of the measurement operators.
 
         # Compute the probabilities for each measurement.
         self.probabilities = {m: np.trace(self.measurements[m] @ self.rho) 
                               for m in self.measurements.keys()}
-        assert abs(1 - sum(self.probabilities.values())) < TOL   
+        assert abs(1 - sum(self.probabilities.values())) < self.tol   
         self.plot_probabilities(self.probabilities)
         
         # Compute the post-measurement states for each measurement.
         self.post_rho = {m: None for m in self.measurements.keys()}
         for m in self.post_rho.keys():           
-            if self.probabilities[m] > TOL:
+            if self.probabilities[m] > self.tol:
                 self.post_rho[m] = self.measurements[m] @ self.rho @ self.measurements[m]/self.probabilities[m]
                 assert self.is_density_matrix(self.post_rho[m])                
             else:
                 self.post_rho[m] = None
 
             print(f"\n===== Prob({m}): {np.round(self.probabilities[m],3)} =====")
-            self.print_states(self.post_rho[m], self.modes, self.dims)
+            self.print_states(self.post_rho[m], self.modes, self.dims, True)
 
     @staticmethod
     def parse_bombs(bomb):
@@ -234,14 +270,14 @@ class IFM:
             plt.title(title)
         plt.show()
         
-    def is_density_matrix(self, rho, tol=TOL):
+    def is_density_matrix(self, rho):
         
         """ Check that the matrix is Hermitian and of trace one. """
                 
-        return abs(1 - np.trace(rho)) < tol and np.allclose(rho, np.conjugate(rho.T), atol=tol) and np.all(np.linalg.eigvalsh(rho) >= -tol)
+        return abs(1 - np.trace(rho)) < self.tol and np.allclose(rho, np.conjugate(rho.T), atol=self.tol) and np.all(np.linalg.eigvalsh(rho) >= -self.tol)
 
 
-    def is_unitary(self, matrix, tol=TOL):
+    def is_unitary(self, matrix):
         # Calculate the conjugate transpose (Hermitian)
         conj_transpose = np.conjugate(matrix.T)
         
@@ -252,9 +288,11 @@ class IFM:
         identity = np.eye(matrix.shape[0])
         
         # Use np.allclose to check if matrices are close within the specified tolerance
-        return np.allclose(product, identity, atol=tol)
+        return np.allclose(product, identity, atol=self.tol)
 
-    def print_states(self, rho, modes, dims):
+    def print_states(self, rho, modes, dims, save=True):
+    
+        # TODO: Save the states by returning them.
     
         self.subrho = {}
     
@@ -263,26 +301,26 @@ class IFM:
         else:
             subrho = self.partial_trace(rho, [0], dims)
             assert self.is_density_matrix(subrho)
-            purity = self.purity(subrho)
+            purity = self.purity(subrho, self.tol)
             print('photon:', np.round(purity, 4)) 
             print(np.round(subrho, 3))
             self.subrho['photon'] = {i: d for i, d in enumerate(subrho.diagonal())}
-            self.subrho['photon'] = self.subrho['photon'].update({'purity': purity})
+            self.subrho['photon'].update({'purity': purity})
             for k in range(modes):
                 subrho = self.partial_trace(rho, [k+1], dims)
                 assert self.is_density_matrix(subrho)
-                purity = self.purity(subrho)
+                purity = self.purity(subrho, self.tol)
                 print(f'bomb {k+1}:', np.round(purity, 4))
                 print(np.round(subrho, 3))
                 self.subrho[f'bomb {k+1}:'] = {i: d for i, d in enumerate(subrho.diagonal())}
-                self.subrho[f'bomb {k+1}:'] = self.subrho[f'bomb {k+1}:'].update({'purity': purity})
+                self.subrho[f'bomb {k+1}:'].update({'purity': purity})
                 
-            self.subrho = pd.DataFrame(self.subrho)
-            self.subrho = self.subrho.transpose()
+            self.subrho = pd.DataFrame(self.subrho).transpose()
+
 
     
     @staticmethod
-    def purity(rho, tol=TOL):
+    def purity(rho, tol):
         
         purity = np.trace(rho @ rho)
         if purity.imag < tol:
@@ -325,18 +363,6 @@ class IFM:
         rho_a = np.einsum(rho_a, idx1+idx2, optimize=optimize)
         
         return rho_a.reshape(Nkeep, Nkeep)
-    
-        # X = [np.random.randn(3,3), # 0
-        #      np.random.randn(4,4), # 1
-        #      np.random.randn(2,2), # 2
-        #      np.random.randn(3,3), # 3
-        #      np.random.randn(7,7), # 4
-        #      ]
-        # X = [(10*x).round() for x in X]
-        # Y = X[0]
-        # for k in range(len(X)-1):
-        #     Y = np.kron(Y, X[k+1])
-        # print(partial_trace(Y, [1], [3,4,2,3,7]))
         
     @staticmethod
     def plot_probabilities(data_dict):
@@ -368,20 +394,12 @@ class IFM:
         plt.show()
 
 
-#%% Run
+#%% Run as a script, not as a module.
        
-my_system = IFM('eee', 3)
-my_system()
-measurements = my_system.measurements
-probabilities = my_system.probabilities
-post_rho = my_system.post_rho
-subrho = my_system.subrho
-
-#%%
-
-
-
-
-# TODO: Do the same for the purities
-
-# A = (np.outer(np.array([1, 1])/np.sqrt(2), np.array([1, 1])/np.sqrt(2)) + np.outer(np.array([0, 1]), np.array([0, 1])))/2; print(A)
+if __name__ == "__main__":
+    my_system = IFM('bc', 1)
+    my_system()
+    measurements = my_system.measurements
+    probabilities = my_system.probabilities
+    post_rho = my_system.post_rho
+    subrho = my_system.subrho
