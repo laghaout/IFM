@@ -8,6 +8,7 @@ Created on Sun Oct 29 14:04:59 2023
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import quantum_information as qi
 
 class IFM:
     
@@ -46,7 +47,7 @@ class IFM:
         
         # If the bombs are represented by a string of characters and the 
         # photon by the path it is exciting, generate the corresponding state
-        # vectors
+        # vectors.
         if isinstance(bombs, str) and isinstance(gamma, int):
             bombs = tuple(self.parse_bombs(b) for b in bombs)
             gamma_temp = np.zeros(len(bombs)+1)
@@ -76,14 +77,15 @@ class IFM:
         self.bombs = bombs[0]
         for k in range(self.modes - 1):
             self.bombs = np.kron(self.bombs, bombs[k+1])
-        
-    def __call__(self, interact=True, verbose=False):
 
-        #%% Initial state
-        
+        # Consrtuct the initial density matrix.
         input_state = np.kron(self.gamma, self.bombs)
         self.rho = np.outer(input_state, input_state)
         assert self.is_density_matrix(self.rho)
+        
+    def __call__(self, interact=True, verbose=False):
+
+        #%% Initial density matrix
 
         if verbose:
             print('========== Initial state')
