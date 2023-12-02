@@ -9,10 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import quantum_information as qi
-<<<<<<< HEAD
 import seaborn as sns
-=======
->>>>>>> adf14c977f2fef939a01e814991f53204f3c428e
 
 class IFM:
     
@@ -85,11 +82,8 @@ class IFM:
         # Consrtuct the initial density matrix.
         input_state = np.kron(self.gamma, self.bombs)
         self.rho = np.outer(input_state, input_state)
-<<<<<<< HEAD
         assert qi.is_density_matrix(self.rho)
-=======
-        assert self.is_density_matrix(self.rho)
->>>>>>> adf14c977f2fef939a01e814991f53204f3c428e
+
         
     def __call__(self, interact=True, verbose=False):
 
