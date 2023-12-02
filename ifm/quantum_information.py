@@ -68,7 +68,11 @@ def symmetric_BS(N, include_vacuum_mode=True):
     
     return BS  
 
+<<<<<<< HEAD
 def plot_density_matrix(rho, title=None):
+=======
+def plot(rho, title=None):
+>>>>>>> adf14c977f2fef939a01e814991f53204f3c428e
     """
     Plot the density matrix `rho`.
 
@@ -187,6 +191,7 @@ def purity(rho, tol=TOL):
         
     return purity
 
+<<<<<<< HEAD
 def Born(P, rho, tol=TOL):
     """
     Apply Born's rule using a projection operator `P` and a quantum state 
@@ -213,6 +218,8 @@ def Born(P, rho, tol=TOL):
     
     return p
 
+=======
+>>>>>>> adf14c977f2fef939a01e814991f53204f3c428e
 def partial_trace(rho, keep, dims, optimize=False):
     """
     Calculate the partial trace. See:
