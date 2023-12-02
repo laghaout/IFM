@@ -8,6 +8,8 @@ Created on Sun Oct 29 14:04:59 2023
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import quantum_information as qi
+import seaborn as sns
 
 class IFM:
     
@@ -46,7 +48,7 @@ class IFM:
         
         # If the bombs are represented by a string of characters and the 
         # photon by the path it is exciting, generate the corresponding state
-        # vectors
+        # vectors.
         if isinstance(bombs, str) and isinstance(gamma, int):
             bombs = tuple(self.parse_bombs(b) for b in bombs)
             gamma_temp = np.zeros(len(bombs)+1)
@@ -67,23 +69,24 @@ class IFM:
         # Construct a symmetric `N`-mode beam splitter. Note that this beam 
         # splitter has one extra dimension to account for the fact that the 
         # incident vacuum remains unchanged.
-        self.BS = self.symmetric_BS(self.modes)
+        self.BS = qi.symmetric_BS(self.modes)
         assert self.modes == self.BS.shape[0] - 1
-        assert self.is_unitary(self.BS)
+        assert qi.is_unitary(self.BS)
 
         # Construct the overall bomb state vector.
         self.dims += [bomb.shape[0] for bomb in self.bombs]
         self.bombs = bombs[0]
         for k in range(self.modes - 1):
             self.bombs = np.kron(self.bombs, bombs[k+1])
+
+        # Consrtuct the initial density matrix.
+        input_state = np.kron(self.gamma, self.bombs)
+        self.rho = np.outer(input_state, input_state)
+        assert qi.is_density_matrix(self.rho)
         
     def __call__(self, interact=True, verbose=False):
 
-        #%% Initial state
-        
-        input_state = np.kron(self.gamma, self.bombs)
-        self.rho = np.outer(input_state, input_state)
-        assert self.is_density_matrix(self.rho)
+        #%% Initial density matrix
 
         if verbose:
             print('========== Initial state')
@@ -92,9 +95,9 @@ class IFM:
         #%% After the first beam splitter
         
         BS = np.kron(self.BS, np.eye(self.bombs.shape[0]))
-        assert self.is_unitary(BS)
-        self.rho = BS @ self.rho @ np.conjugate(BS.T)
-        assert self.is_density_matrix(self.rho)
+        assert qi.is_unitary(BS)
+        self.rho = qi.BS_op(BS, self.rho)
+        assert qi.is_density_matrix(self.rho)
         
         if verbose:
             print('\n========== After the first beam splitter')
@@ -105,7 +108,7 @@ class IFM:
         if interact:
             # TODO: Check the order of the interactions does not matter.
             self.interac()  
-            assert self.is_density_matrix(self.rho)
+            assert qi.is_density_matrix(self.rho)
             
             if verbose:
                 print('\n========== After the interactions')
@@ -113,8 +116,8 @@ class IFM:
             
         #%% After the second beam splitter
         
-        self.rho = BS @ self.rho @ np.conjugate(BS.T)
-        assert self.is_density_matrix(self.rho)
+        self.rho = qi.BS_op(BS, self.rho)
+        assert qi.is_density_matrix(self.rho)
         
         if verbose:
             print('\n========== After the second beam splitter')
@@ -139,7 +142,7 @@ class IFM:
             # TODO: Check the validity of the measurement operators.
 
         # Compute the probabilities for each measurement.
-        self.probabilities = {m: np.trace(self.measurements[m] @ self.rho) 
+        self.probabilities = {m: qi.Born(self.measurements[m], self.rho) 
                               for m in self.measurements.keys()}
         assert abs(1 - sum(self.probabilities.values())) < self.tol   
         self.plot_probabilities(self.probabilities)
@@ -149,7 +152,7 @@ class IFM:
         for m in self.post_rho.keys():           
             if self.probabilities[m] > self.tol:
                 self.post_rho[m] = self.measurements[m] @ self.rho @ self.measurements[m]/self.probabilities[m]
-                assert self.is_density_matrix(self.post_rho[m])                
+                assert qi.is_density_matrix(self.post_rho[m])                
             else:
                 self.post_rho[m] = None
 
@@ -169,24 +172,11 @@ class IFM:
         elif bomb.upper() == 'E':
             return np.array([0, 1, 1])/np.sqrt(2)
         else:
-            assert False, "Wrong letter coding for the bomb"
-        
-    @staticmethod        
-    def symmetric_BS(N, add_explosion_mode=True):
-        
-        a = 2*np.pi/N
-        a = np.cos(a) + 1j*np.sin(a)    
-        BS = np.array([[a**(r*c) for c in range(N)] for r in range(N)])
-        if add_explosion_mode:
-            BS = np.concatenate((np.zeros((N, 1)), BS), axis=1)
-            BS = np.concatenate((np.zeros((1, N+1)), BS), axis=0)
-            BS[0,0] = np.sqrt(N)
-        BS /=  np.sqrt(N)
-        return BS       
+            assert False, "Wrong letter coding for the bomb"   
     
-    def interac(self):
-
-        rho = self.rho.copy()  # TODO: Move outside the loop.        
+    def interac(self):  # TODO: Check this function
+        
+        rho = self.rho.copy()  
 
         for mode in range(1, self.modes + 1):
                    
@@ -216,8 +206,7 @@ class IFM:
                 
             self.rho = rho
             
-            assert self.is_density_matrix(rho)
-            
+            assert qi.is_density_matrix(rho)
         
     def interac_helper(self, mode, status):
         # TODO: What is going on here?
@@ -244,52 +233,6 @@ class IFM:
         
         return np.where(np.kron(gamma, bombs) == 1)[0]
 
-    def plot(self, rho, title=None):
-        
-        cells = rho.shape[0]
-        
-        # Use Matplotlib to render the array with a grid
-        fig, ax = plt.subplots()
-        # TODO: Should I also draw the imaginary part?
-        cax = ax.matshow(rho.real, cmap='viridis')  
-        
-        # Add color bar
-        plt.colorbar(cax)
-        
-        # Set ticks
-        ax.set_xticks(np.arange(-0.5, cells, 1), minor=True)
-        ax.set_yticks(np.arange(-0.5, cells, 1), minor=True)
-        
-        # Gridlines based on minor ticks
-        ax.grid(which="minor", color="w", linestyle='-', linewidth=.08)
-        
-        # Hide major tick labels
-        ax.tick_params(which="major", bottom=False, left=False, labelbottom=False, labelleft=False)
-        
-        if isinstance(title, str):
-            plt.title(title)
-        plt.show()
-        
-    def is_density_matrix(self, rho):
-        
-        """ Check that the matrix is Hermitian and of trace one. """
-                
-        return abs(1 - np.trace(rho)) < self.tol and np.allclose(rho, np.conjugate(rho.T), atol=self.tol) and np.all(np.linalg.eigvalsh(rho) >= -self.tol)
-
-
-    def is_unitary(self, matrix):
-        # Calculate the conjugate transpose (Hermitian)
-        conj_transpose = np.conjugate(matrix.T)
-        
-        # Perform the multiplication of the matrix with its conjugate transpose
-        product = np.dot(matrix, conj_transpose)
-        
-        # Check if the product is close to the identity matrix
-        identity = np.eye(matrix.shape[0])
-        
-        # Use np.allclose to check if matrices are close within the specified tolerance
-        return np.allclose(product, identity, atol=self.tol)
-
     def print_states(self, rho, modes, dims, save=True):
     
         # TODO: Save the states by returning them.
@@ -299,76 +242,26 @@ class IFM:
         if rho is None:
             print('Impossible scenario.')
         else:
-            subrho = self.partial_trace(rho, [0], dims)
-            assert self.is_density_matrix(subrho)
-            purity = self.purity(subrho, self.tol)
+            subrho = qi.partial_trace(rho, [0], dims)
+            assert qi.is_density_matrix(subrho)
+            purity = qi.purity(subrho, self.tol)
             print('photon:', np.round(purity, 4)) 
             print(np.round(subrho, 3))
             self.subrho['photon'] = {i: d for i, d in enumerate(subrho.diagonal())}
             self.subrho['photon'].update({'purity': purity})
             for k in range(modes):
-                subrho = self.partial_trace(rho, [k+1], dims)
-                assert self.is_density_matrix(subrho)
-                purity = self.purity(subrho, self.tol)
+                subrho = qi.partial_trace(rho, [k+1], dims)
+                assert qi.is_density_matrix(subrho)
+                purity = qi.purity(subrho, self.tol)
                 print(f'bomb {k+1}:', np.round(purity, 4))
                 print(np.round(subrho, 3))
                 self.subrho[f'bomb {k+1}:'] = {i: d for i, d in enumerate(subrho.diagonal())}
                 self.subrho[f'bomb {k+1}:'].update({'purity': purity})
                 
             self.subrho = pd.DataFrame(self.subrho).transpose()
-
-
-    
-    @staticmethod
-    def purity(rho, tol):
-        
-        purity = np.trace(rho @ rho)
-        if purity.imag < tol:
-            purity = purity.real
-        return purity
-    
-    @staticmethod
-    def partial_trace(rho, keep, dims, optimize=False):
-        """Calculate the partial trace
-    
-        ρ_a = Tr_b(ρ)
-    
-        Parameters
-        ----------
-        ρ : 2D array
-            Matrix to trace
-        keep : array
-            An array of indices of the spaces to keep after
-            being traced. For instance, if the space is
-            A x B x C x D and we want to trace out B and D,
-            keep = [0,2]
-        dims : array
-            An array of the dimensions of each space.
-            For instance, if the space is A x B x C x D,
-            dims = [dim_A, dim_B, dim_C, dim_D]
-    
-        Returns
-        -------
-        ρ_a : 2D array
-            Traced matrix
-        """
-        keep = np.asarray(keep)
-        dims = np.asarray(dims)
-        Ndim = dims.size
-        Nkeep = np.prod(dims[keep])
-    
-        idx1 = [i for i in range(Ndim)]
-        idx2 = [Ndim+i if i in keep else i for i in range(Ndim)]
-        rho_a = rho.reshape(np.tile(dims,2))
-        rho_a = np.einsum(rho_a, idx1+idx2, optimize=optimize)
-        
-        return rho_a.reshape(Nkeep, Nkeep)
         
     @staticmethod
     def plot_probabilities(data_dict):
-    
-        import seaborn as sns
-        import matplotlib.pyplot as plt
         
         # Extract keys and values from the dictionary
         keys = list(data_dict.keys())
