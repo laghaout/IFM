@@ -5,7 +5,7 @@ Created on Sat Dec  2 18:57:06 2023
 @author: Amine Laghaout
 """
 
-TOL = 1e-14  # Numerical tolerance
+TOL = 1e-15  # Numerical tolerance
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -114,7 +114,7 @@ def plot_density_matrix(rho, title=None):
     
 def is_density_matrix(rho, tol=TOL):
     """
-    Check that the matrix is Hermitian and of trace one.
+    Check that the matrix `rho` is positive semi-definite and of trace one.
 
     Parameters
     ----------
@@ -126,15 +126,33 @@ def is_density_matrix(rho, tol=TOL):
     Returns
     -------
     bool
-        True if the matrix has
-        - trace 1,
-        - is its own complex conjugate, and
+        True if the `rho` has
+        - trace 1, and
         - all its eigenvalues are positive.
     """
             
     return (abs(1 - np.trace(rho)) < tol and 
-            np.allclose(rho, np.conjugate(rho.T), atol=tol) and 
             np.all(np.linalg.eigvalsh(rho) >= -tol))
+
+def is_Hermitian(matrix, tol=TOL):
+    """
+    Check that the `matrix` is Hermitian.
+
+    Parameters
+    ----------
+    matrix : np.ndarray
+        Some complex matrix
+    tol : float, optional
+        Numerical tolerance
+
+    Returns
+    -------
+    bool
+        True if the `matrix` is Hermitian
+    """
+    
+    return np.allclose(matrix, np.conjugate(matrix.T), atol=tol)
+
 
 def is_unitary(matrix, tol=TOL):
     """
@@ -181,6 +199,7 @@ def purity(rho, tol=TOL):
     """
     
     purity = np.trace(rho @ rho)
+    assert -tol < purity < 1 + tol
     
     if purity.imag < tol:
         purity = purity.real
@@ -210,6 +229,9 @@ def Born(P, rho, tol=TOL):
     
     p = np.trace(P @ rho)
     assert -tol < p < 1 + tol
+    
+    if p.imag < tol:
+        p = p.real
     
     return p
 
@@ -251,3 +273,27 @@ def partial_trace(rho, keep, dims, optimize=False):
     rho_a = np.einsum(rho_a, idx1+idx2, optimize=optimize)
     
     return rho_a.reshape(Nkeep, Nkeep)
+
+def trim_imaginary(matrix, tol=TOL):
+    """
+    For better readability, trim the imaginary parts when they are negligible 
+    within numerical tolerance.
+
+    Parameters
+    ----------
+    matrix :  np.ndarray
+        Complex matrix
+    tol : float, optional
+        Numerical tolerance
+
+    Returns
+    -------
+    matrix : np.ndarray
+        The same matrix with its imaginary part removed if negligible
+
+    """
+    
+    if (matrix.imag < tol).all():
+        matrix = matrix.real
+        
+    return matrix

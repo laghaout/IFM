@@ -6,7 +6,6 @@ WORKDIR /home
 # Install Linux utilities.
 RUN apt -y update
 RUN apt -y upgrade
-RUN apt -y install emacs-nox
 RUN apt -y install less
 RUN apt -y install tk
 RUN apt -y install tree

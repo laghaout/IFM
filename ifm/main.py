@@ -3,6 +3,10 @@
 Created on Sun Oct 29 14:04:59 2023
 
 @author: Amine Laghaout
+
+Generalization of the Elitzur-Vaidman bomb tester to `N`-partite Mach-Zehnder
+interferometers where the bombs can be in a superposition of being on a path 
+and away from the path.
 """
 
 import matplotlib.pyplot as plt
@@ -13,7 +17,7 @@ import seaborn as sns
 
 class IFM:
     
-    def __init__(self, bombs, gamma=1, tol = 1e-14):
+    def __init__(self, bombs, gamma=1, tol = 1e-15, validate=True):
         """
         Parameters
         ----------
@@ -40,6 +44,8 @@ class IFM:
               `N`-armed Mach-Zehnder interferometer.
         tol : float, optional
             Numerical tolerance.
+        validate : bool
+            Validate the math (e.g., unitarity of the beam splitter, )? 
 
         Returns
         -------
@@ -56,22 +62,23 @@ class IFM:
             gamma = gamma_temp
 
         # Ensure the number of bombs is equal to the number of photon paths.
-        assert gamma.shape[0] == len(bombs) + 1
+        if validate: assert gamma.shape[0] == len(bombs) + 1
         for bomb in bombs: 
-            assert isinstance(bomb, np.ndarray)
+            if validate: assert isinstance(bomb, np.ndarray)
         
+        self.validate = validate            # Validation flag
         self.tol = tol                      # Numerical tolerance
         self.gamma = gamma                  # Photonic state over the modes
         self.dims = [self.gamma.shape[0]]   # Dimensions of the Hilbert spaces
         self.bombs = bombs                  # Bomb states
         self.modes = len(self.gamma) - 1    # Number of photon paths
-        
+                
         # Construct a symmetric `N`-mode beam splitter. Note that this beam 
         # splitter has one extra dimension to account for the fact that the 
         # incident vacuum remains unchanged.
         self.BS = qi.symmetric_BS(self.modes)
-        assert self.modes == self.BS.shape[0] - 1
-        assert qi.is_unitary(self.BS)
+        if self.validate: assert self.modes == self.BS.shape[0] - 1
+        if self.validate: assert qi.is_unitary(self.BS)
 
         # Construct the overall bomb state vector.
         self.dims += [bomb.shape[0] for bomb in self.bombs]
@@ -82,80 +89,114 @@ class IFM:
         # Consrtuct the initial density matrix.
         input_state = np.kron(self.gamma, self.bombs)
         self.rho = np.outer(input_state, input_state)
-        assert qi.is_density_matrix(self.rho)
+        if self.validate: assert qi.is_density_matrix(self.rho)
 
         
     def __call__(self, interact=True, verbose=False):
+        """
+        Run the photon through the Mach-Zehnder interferometer.
+
+        Parameters
+        ----------
+        interact : bool, optional
+            Shall the photon interact with the bombs?
+        verbose : bool, optional
+            Print updates on the evolution of the system?
+
+        Returns
+        -------
+        None.
+        """
+
+        # Report
+        self.report = {
+            m: {'probability': None,    # Outcome probability
+                'post_rho': None,       # Overall output state
+                'subsystems': {         # Output subsystems
+                    'subrho': None,     # Output subsystem states
+                    'purity': None,     # Purity of subsystem state
+                    'diagonals': None}  # Diagonal of subsystem states
+                } for m in range(self.modes)}
 
         #%% Initial density matrix
 
         if verbose:
             print('========== Initial state')
-            self.print_states(self.rho, self.modes, self.dims)   
+            self.print_states(self.rho, self.modes, self.dims) 
         
-        #%% After the first beam splitter
+        #%% The first beam splitter
         
+        # Generalize the beam splitter operation so that that it can act on the
+        # photon-bombs system.
         BS = np.kron(self.BS, np.eye(self.bombs.shape[0]))
-        assert qi.is_unitary(BS)
+        if self.validate: assert qi.is_unitary(BS)
+        
+        # Operate the beam splitter on the state.
         self.rho = qi.BS_op(BS, self.rho)
-        assert qi.is_density_matrix(self.rho)
+        if self.validate: assert qi.is_density_matrix(self.rho)
         
         if verbose:
             print('\n========== After the first beam splitter')
             self.print_states(self.rho, self.modes, self.dims)    
     
-        #%% After the interactions
+        #%% The photon-bombs interactions
         
         if interact:
-            # TODO: Check the order of the interactions does not matter.
+            # TODO: Check that the order of the interactions does not matter.
             self.interac()  
-            assert qi.is_density_matrix(self.rho)
+            if self.validate: assert qi.is_density_matrix(self.rho)
             
             if verbose:
-                print('\n========== After the interactions')
+                print('\n========== After the photon-bombs interactions')
                 self.print_states(self.rho, self.modes, self.dims)
             
-        #%% After the second beam splitter
+        #%% The second beam splitter
         
         self.rho = qi.BS_op(BS, self.rho)
-        assert qi.is_density_matrix(self.rho)
+        if self.validate: assert qi.is_density_matrix(self.rho)
         
         if verbose:
             print('\n========== After the second beam splitter')
             self.print_states(self.rho, self.modes, self.dims)    
     
-        #%% After the measurements
+        #%% Photon measurements in the Fock basis
         
-        print('\n========== After the measurements')
+        print('\n========== After the photon measurements')
         
-        # Compute photon measurement operators in the Fock basis.
+        # The projection operators as state vectors are all initialized to 0.
+        # There are as many projection operators as the dimension of the 
+        # Hilbert space, which---recall---also include a projection on the 
+        # vacuum, corresponding to the absorption of the photon upon the 
+        # explosion of the bomb.
         self.measurements = {
             i: np.zeros(self.modes + 1) for i in range(self.modes + 1)}
+        
+        # For each measurement operator.
         for k in self.measurements.keys():
-            # Pick the `k`-th mode of the photon.
+            # Select the dimension of the Hilbert space to be projected on.
             self.measurements[k][k] = 1
-            self.measurements[k] = np.outer(self.measurements[k], 
-                                            self.measurements[k])
-            # The Hilbert space of the bombs is not projected upon.
+            # Construct the corresponding measurement operator.
+            self.measurements[k] = np.outer(
+                self.measurements[k], self.measurements[k])
+            # The Hilbert space of the bombs is not projected upon, so just 
+            # expand the measurement operator with the identity.
             self.measurements[k] = np.kron(
                 self.measurements[k], np.eye(len(self.bombs)))
-
-            # TODO: Check the validity of the measurement operators.
+            # Check the Hermicity of the measurement operator thus constructed.
+            if self.validate: assert qi.is_Hermitian(self.measurements[k])
 
         # Compute the probabilities for each measurement.
         self.probabilities = {m: qi.Born(self.measurements[m], self.rho) 
                               for m in self.measurements.keys()}
-        assert abs(1 - sum(self.probabilities.values())) < self.tol   
+        if self.validate: assert abs(1 - sum(self.probabilities.values())) < self.tol 
         self.plot_probabilities(self.probabilities)
-        
+                
         # Compute the post-measurement states for each measurement.
         self.post_rho = {m: None for m in self.measurements.keys()}
         for m in self.post_rho.keys():           
             if self.probabilities[m] > self.tol:
                 self.post_rho[m] = self.measurements[m] @ self.rho @ self.measurements[m]/self.probabilities[m]
-                assert qi.is_density_matrix(self.post_rho[m])                
-            else:
-                self.post_rho[m] = None
+                if self.validate: assert qi.is_density_matrix(self.post_rho[m])                
 
             print(f"\n===== Prob({m}): {np.round(self.probabilities[m],3)} =====")
             self.print_states(self.post_rho[m], self.modes, self.dims, True)
@@ -173,7 +214,7 @@ class IFM:
         elif bomb.upper() == 'E':
             return np.array([0, 1, 1])/np.sqrt(2)
         else:
-            assert False, "Wrong letter coding for the bomb"   
+            raise ValueError("Wrong letter coding for the bomb")
     
     def interac(self):  # TODO: Check this function
         
@@ -206,8 +247,6 @@ class IFM:
                 rho = C @ rho @ C.conj().T
                 
             self.rho = rho
-            
-            assert qi.is_density_matrix(rho)
         
     def interac_helper(self, mode, status):
         # TODO: What is going on here?
@@ -244,18 +283,18 @@ class IFM:
             print('Impossible scenario.')
         else:
             subrho = qi.partial_trace(rho, [0], dims)
-            assert qi.is_density_matrix(subrho)
+            if self.validate: assert qi.is_density_matrix(subrho)
             purity = qi.purity(subrho, self.tol)
-            print('photon:', np.round(purity, 4)) 
-            print(np.round(subrho, 3))
+            print('photon, purity:', np.round(purity, 4)) 
+            print(np.round(qi.trim_imaginary(subrho), 3)) 
             self.subrho['photon'] = {i: d for i, d in enumerate(subrho.diagonal())}
             self.subrho['photon'].update({'purity': purity})
             for k in range(modes):
                 subrho = qi.partial_trace(rho, [k+1], dims)
-                assert qi.is_density_matrix(subrho)
+                if self.validate: assert qi.is_density_matrix(subrho)
                 purity = qi.purity(subrho, self.tol)
-                print(f'bomb {k+1}:', np.round(purity, 4))
-                print(np.round(subrho, 3))
+                print(f'bomb {k+1}, purity:', np.round(purity, 4))
+                print(np.round(qi.trim_imaginary(subrho), 3))
                 self.subrho[f'bomb {k+1}:'] = {i: d for i, d in enumerate(subrho.diagonal())}
                 self.subrho[f'bomb {k+1}:'].update({'purity': purity})
                 
@@ -291,9 +330,10 @@ class IFM:
 #%% Run as a script, not as a module.
        
 if __name__ == "__main__":
-    my_system = IFM('bc', 1)
-    my_system()
+    my_system = IFM('ecc', 1)
+    my_system(verbose=True)
     measurements = my_system.measurements
     probabilities = my_system.probabilities
     post_rho = my_system.post_rho
     subrho = my_system.subrho
+    report = my_system.report
