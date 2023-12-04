@@ -110,13 +110,14 @@ class IFM:
 
         # Report
         self.report = {
-            m: {'probability': None,    # Outcome probability
+            m: {'measurement': None,    # Measurement operator
+                'probability': None,    # Outcome probability
                 'post_rho': None,       # Overall output state
                 'subsystems': {         # Output subsystems
                     'subrho': None,     # Output subsystem states
                     'purity': None,     # Purity of subsystem state
                     'diagonals': None}  # Diagonal of subsystem states
-                } for m in range(self.modes)}
+                } for m in range(self.modes + 1)}
 
         #%% Initial density matrix
 
@@ -162,44 +163,47 @@ class IFM:
         #%% Photon measurements in the Fock basis
         
         print('\n========== After the photon measurements')
-        
-        # The projection operators as state vectors are all initialized to 0.
-        # There are as many projection operators as the dimension of the 
-        # Hilbert space, which---recall---also include a projection on the 
-        # vacuum, corresponding to the absorption of the photon upon the 
-        # explosion of the bomb.
-        self.measurements = {
-            i: np.zeros(self.modes + 1) for i in range(self.modes + 1)}
-        
-        # For each measurement operator.
-        for k in self.measurements.keys():
+                
+        # For each measurement output…
+        for k in self.report.keys():
+            
+            #### Measurement operator
+            
+            # The projection operators as state vectors are all initialized to 
+            # 0. There are as many projection operators as the dimension of the 
+            # Hilbert space, which---recall---also include a projection on the 
+            # vacuum, corresponding to the absorption of the photon upon the 
+            # explosion of the bomb.
+            measurement = np.zeros(self.modes + 1)
             # Select the dimension of the Hilbert space to be projected on.
-            self.measurements[k][k] = 1
+            measurement[k] = 1
             # Construct the corresponding measurement operator.
-            self.measurements[k] = np.outer(
-                self.measurements[k], self.measurements[k])
+            measurement = np.outer(measurement, measurement)
             # The Hilbert space of the bombs is not projected upon, so just 
             # expand the measurement operator with the identity.
-            self.measurements[k] = np.kron(
-                self.measurements[k], np.eye(len(self.bombs)))
+            measurement = np.kron(measurement, np.eye(len(self.bombs)))
             # Check the Hermicity of the measurement operator thus constructed.
-            if self.validate: assert qi.is_Hermitian(self.measurements[k])
+            if self.validate: assert qi.is_Hermitian(measurement)
+            self.report[k]['measurement'] = measurement
+            
+            #### Probability of the measurement
+            
+            probability = qi.Born(measurement, self.rho)
+            self.report[k]['probability'] = probability
+            
+            #### Post-measurement state
+            
+            if probability > self.tol:
+                post_rho = measurement @ self.rho @ measurement/probability
+                if self.validate: assert qi.is_density_matrix(post_rho)    
+                self.report[k]['post_rho'] = qi.trim_imaginary(post_rho)
 
-        # Compute the probabilities for each measurement.
-        self.probabilities = {m: qi.Born(self.measurements[m], self.rho) 
-                              for m in self.measurements.keys()}
-        if self.validate: assert abs(1 - sum(self.probabilities.values())) < self.tol 
-        self.plot_probabilities(self.probabilities)
-                
-        # Compute the post-measurement states for each measurement.
-        self.post_rho = {m: None for m in self.measurements.keys()}
-        for m in self.post_rho.keys():           
-            if self.probabilities[m] > self.tol:
-                self.post_rho[m] = self.measurements[m] @ self.rho @ self.measurements[m]/self.probabilities[m]
-                if self.validate: assert qi.is_density_matrix(self.post_rho[m])                
-
-            print(f"\n===== Prob({m}): {np.round(self.probabilities[m],3)} =====")
-            self.print_states(self.post_rho[m], self.modes, self.dims, True)
+            print(f"\n===== Prob({k}): {np.round(probability,3)} =====")
+            self.report[k]['subsystems'] = self.print_states(post_rho, self.modes, self.dims, True)
+            
+        probabilities = [self.report[k]['probability'] for k in range(self.modes+1)]
+        assert -self.tol <= sum(probabilities) <= 1 + self.tol
+        self.plot_probabilities(probabilities)
 
     @staticmethod
     def parse_bombs(bomb):
@@ -274,38 +278,36 @@ class IFM:
         return np.where(np.kron(gamma, bombs) == 1)[0]
 
     def print_states(self, rho, modes, dims, save=True):
-    
-        # TODO: Save the states by returning them.
-    
-        self.subrho = {}
+        
+        subsystems = {}
     
         if rho is None:
             print('Impossible scenario.')
         else:
-            subrho = qi.partial_trace(rho, [0], dims)
+            subrho = qi.trim_imaginary(qi.partial_trace(rho, [0], dims))
             if self.validate: assert qi.is_density_matrix(subrho)
             purity = qi.purity(subrho, self.tol)
             print('photon, purity:', np.round(purity, 4)) 
-            print(np.round(qi.trim_imaginary(subrho), 3)) 
-            self.subrho['photon'] = {i: d for i, d in enumerate(subrho.diagonal())}
-            self.subrho['photon'].update({'purity': purity})
+            print(np.round(subrho, 3)) 
+            subsystems['photon'] = {i: d for i, d in enumerate(subrho.diagonal())}
+            subsystems['photon'].update({'purity': purity, 'subrho': subrho})
             for k in range(modes):
-                subrho = qi.partial_trace(rho, [k+1], dims)
+                subrho = qi.trim_imaginary(qi.partial_trace(rho, [k+1], dims))
                 if self.validate: assert qi.is_density_matrix(subrho)
                 purity = qi.purity(subrho, self.tol)
                 print(f'bomb {k+1}, purity:', np.round(purity, 4))
-                print(np.round(qi.trim_imaginary(subrho), 3))
-                self.subrho[f'bomb {k+1}:'] = {i: d for i, d in enumerate(subrho.diagonal())}
-                self.subrho[f'bomb {k+1}:'].update({'purity': purity})
+                print(np.round(subrho, 3))
+                subsystems[f'bomb {k+1}:'] = {i: d for i, d in enumerate(subrho.diagonal())}
+                subsystems[f'bomb {k+1}:'].update({'purity': purity, 'subrho': subrho})
                 
-            self.subrho = pd.DataFrame(self.subrho).transpose()
+        return subsystems
         
     @staticmethod
-    def plot_probabilities(data_dict):
+    def plot_probabilities(values):
         
         # Extract keys and values from the dictionary
-        keys = list(data_dict.keys())
-        values = list(data_dict.values())
+        # keys = list(data_dict.keys())
+        # values = list(data_dict.values())
         
         # Create a Seaborn histogram
         sns.set(style="whitegrid", 
@@ -313,8 +315,8 @@ class IFM:
         # plt.figure(figsize=(10, 6))  # Set the figure size (adjust as needed)
         
         # Create the histogram using Seaborn
-        sns.barplot(x=keys, y=values, 
-                    palette=['darkred']+['darkblue']*(len(data_dict)-1))
+        sns.barplot(x=list(range(len(values))), y=values, 
+                    palette=['darkred']+['darkblue']*(len(values)-1))
         
         # Set labels and title
         plt.xlabel('Mode')
@@ -330,10 +332,6 @@ class IFM:
 #%% Run as a script, not as a module.
        
 if __name__ == "__main__":
-    my_system = IFM('ecc', 1)
+    my_system = IFM('ecce', 1)
     my_system(verbose=True)
-    measurements = my_system.measurements
-    probabilities = my_system.probabilities
-    post_rho = my_system.post_rho
-    subrho = my_system.subrho
     report = my_system.report
