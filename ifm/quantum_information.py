@@ -5,10 +5,11 @@ Created on Sat Dec  2 18:57:06 2023
 @author: Amine Laghaout
 """
 
-TOL = 1e-15  # Numerical tolerance
+TOL = 1e-13  # Numerical tolerance
 
 import numpy as np
 import matplotlib.pyplot as plt
+
 
 def BS_op(BS, rho):
     """
@@ -26,10 +27,11 @@ def BS_op(BS, rho):
     rho : np.ndarray
         Density matrix of the transformed quantum state
     """
-    
+
     rho = BS @ rho @ np.conjugate(BS.T)
-    
+
     return rho
+
 
 def symmetric_BS(N, include_vacuum_mode=True):
     """
@@ -37,9 +39,9 @@ def symmetric_BS(N, include_vacuum_mode=True):
     - https://doi.org/10.1103/PhysRevA.55.2564
     - https://physics.stackexchange.com/questions/789867/what-is-a-general-expression-for-a-symmetric-n-mode-beam-splitter
     - https://physics.stackexchange.com/questions/787593/what-does-a-beam-splitter-look-like-in-path-encoded-notation-for-at-most-one-pho
-    
+
     The first dimension of the Hilbert space represents the vacuum whereas all
-    subsequent dimensions represent the excitation of a single photon in the 
+    subsequent dimensions represent the excitation of a single photon in the
     corresponding port of the beam splitter.
 
     Parameters
@@ -47,26 +49,27 @@ def symmetric_BS(N, include_vacuum_mode=True):
     N : int
         Number of modes
     include_vacuum_mode : bool, optional
-        Include the possibility that only the vacuum is "incident" on the beam 
+        Include the possibility that only the vacuum is "incident" on the beam
         splitter?
 
     Returns
     -------
     BS : np.dnarray
-        Matrix representation of the beam splitter with at most photon 
+        Matrix representation of the beam splitter with at most photon
         excitation
     """
-    
-    a = 2*np.pi/N
-    a = np.cos(a) + 1j*np.sin(a)    
-    BS = np.array([[a**(r*c) for c in range(N)] for r in range(N)])
+
+    a = 2 * np.pi / N
+    a = np.cos(a) + 1j * np.sin(a)
+    BS = np.array([[a ** (r * c) for c in range(N)] for r in range(N)])
     if include_vacuum_mode:
         BS = np.concatenate((np.zeros((N, 1)), BS), axis=1)
-        BS = np.concatenate((np.zeros((1, N+1)), BS), axis=0)
-        BS[0,0] = np.sqrt(N)
-    BS /=  np.sqrt(N)
-    
-    return BS  
+        BS = np.concatenate((np.zeros((1, N + 1)), BS), axis=0)
+        BS[0, 0] = np.sqrt(N)
+    BS /= np.sqrt(N)
+
+    return BS
+
 
 def plot_density_matrix(rho, title=None):
     """
@@ -83,35 +86,41 @@ def plot_density_matrix(rho, title=None):
     -------
     None.
     """
-    
+
     cells = rho.shape[0]
-    
+
     # Use Matplotlib to render the array with a grid
     fig, ax = plt.subplots()
-    
+
     # TODO: Also represent the imaginary part
     assert False
-    cax = ax.matshow(rho.real, cmap='viridis')  
-    
+    cax = ax.matshow(rho.real, cmap="viridis")
+
     # Add color bar
     plt.colorbar(cax)
-    
+
     # Set ticks
     ax.set_xticks(np.arange(-0.5, cells, 1), minor=True)
     ax.set_yticks(np.arange(-0.5, cells, 1), minor=True)
-    
+
     # Gridlines based on minor ticks
-    ax.grid(which="minor", color="w", linestyle='-', linewidth=.08)
-    
+    ax.grid(which="minor", color="w", linestyle="-", linewidth=0.08)
+
     # Hide major tick labels
-    ax.tick_params(which="major", bottom=False, left=False, labelbottom=False, 
-                   labelleft=False)
-    
+    ax.tick_params(
+        which="major",
+        bottom=False,
+        left=False,
+        labelbottom=False,
+        labelleft=False,
+    )
+
     if not isinstance(title, None):
         plt.title(title)
-        
+
     plt.show()
-    
+
+
 def is_density_matrix(rho, tol=TOL):
     """
     Check that the matrix `rho` is positive semi-definite and of trace one.
@@ -130,9 +139,11 @@ def is_density_matrix(rho, tol=TOL):
         - trace 1, and
         - all its eigenvalues are positive.
     """
-            
-    return (abs(1 - np.trace(rho)) < tol and 
-            np.all(np.linalg.eigvalsh(rho) >= -tol))
+
+    return abs(1 - np.trace(rho)) < tol and np.all(
+        np.linalg.eigvalsh(rho) >= -tol
+    )
+
 
 def is_Hermitian(matrix, tol=TOL):
     """
@@ -150,7 +161,7 @@ def is_Hermitian(matrix, tol=TOL):
     bool
         True if the `matrix` is Hermitian
     """
-    
+
     return np.allclose(matrix, np.conjugate(matrix.T), atol=tol)
 
 
@@ -174,16 +185,17 @@ def is_unitary(matrix, tol=TOL):
 
     # Calculate the conjugate transpose (Hermitian).
     conj_transpose = np.conjugate(matrix.T)
-    
+
     # Perform the multiplication of the matrix with its conjugate transpose.
     product = np.dot(matrix, conj_transpose)
-    
+
     # Is the product equal to the identity within the specified tolerance?
-    return np.allclose(product, np.eye(matrix.shape[0]), atol=tol)    
+    return np.allclose(product, np.eye(matrix.shape[0]), atol=tol)
+
 
 def purity(rho, tol=TOL):
     """
-    Compute the purity of a quantum state `rho`. 
+    Compute the purity of a quantum state `rho`.
 
     Parameters
     ----------
@@ -197,18 +209,19 @@ def purity(rho, tol=TOL):
     purity : float
         Purity of the quantum state
     """
-    
+
     purity = np.trace(rho @ rho)
-    assert -tol < purity < 1 + tol
-    
+    assert -tol < purity < 1 + tol, f"purity is {purity}"
+
     if purity.imag < tol:
         purity = purity.real
-        
+
     return purity
+
 
 def Born(P, rho, tol=TOL):
     """
-    Apply Born's rule using a projection operator `P` and a quantum state 
+    Apply Born's rule using a projection operator `P` and a quantum state
     `rho`.
 
     Parameters
@@ -226,14 +239,15 @@ def Born(P, rho, tol=TOL):
         Probability of projection of `rho` onto `P`
 
     """
-    
+
     p = np.trace(P @ rho)
     assert -tol < p < 1 + tol
-    
+
     if p.imag < tol:
         p = p.real
-    
+
     return p
+
 
 def partial_trace(rho, keep, dims, optimize=False):
     """
@@ -261,22 +275,23 @@ def partial_trace(rho, keep, dims, optimize=False):
     ρ_a : 2D array
         Traced matrix
     """
-    
+
     keep = np.asarray(keep)
     dims = np.asarray(dims)
     Ndim = dims.size
     Nkeep = np.prod(dims[keep])
 
     idx1 = [i for i in range(Ndim)]
-    idx2 = [Ndim+i if i in keep else i for i in range(Ndim)]
-    rho_a = rho.reshape(np.tile(dims,2))
-    rho_a = np.einsum(rho_a, idx1+idx2, optimize=optimize)
-    
+    idx2 = [Ndim + i if i in keep else i for i in range(Ndim)]
+    rho_a = rho.reshape(np.tile(dims, 2))
+    rho_a = np.einsum(rho_a, idx1 + idx2, optimize=optimize)
+
     return rho_a.reshape(Nkeep, Nkeep)
+
 
 def trim_imaginary(matrix, tol=TOL):
     """
-    For better readability, trim the imaginary parts when they are negligible 
+    For better readability, trim the imaginary parts when they are negligible
     within numerical tolerance.
 
     Parameters
@@ -292,8 +307,8 @@ def trim_imaginary(matrix, tol=TOL):
         The same matrix with its imaginary part removed if negligible
 
     """
-    
+
     if (matrix.imag < tol).all():
         matrix = matrix.real
-        
+
     return matrix
