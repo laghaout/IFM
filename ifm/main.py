@@ -401,10 +401,13 @@ class IFM:
 # %% Run as a script, not as a module.
 
 if __name__ == "__main__":
-    my_system = IFM("bec", 2)
-    my_system()
-    results = my_system.results
-    my_system.report()
+    my_system = {"e" * k: None for k in range(2, 6)}
+    results = my_system.copy()
+    for k in my_system.keys():
+        my_system[k] = IFM(k, validate=False)
+        my_system[k]()
+        results[k] = my_system[k].results
+        my_system[k].report()
 
 
 def sqrt_matrix(a):
@@ -420,6 +423,22 @@ def fidelity(a, b):
     pass
 
 
+# %%
+
 """
 - Steering in the main output mode, phase acquisition elsewhere.
 """
+# rho = (np.array([[0, 0, 0], [0, .5, .5], [0, .5, .5]]) +
+#        np.array([[0, 0, 0], [0, .5, .5], [0, .5, .5]]) +
+#        np.array([[0, 0, 0], [0, .5, 0], [0, 0, .5]]) +
+#        np.array([[0, 0, 0], [0, .5, 0], [0, 0, .5]]))/4
+# rho = (np.array([[.5, .5], [.5, .5]]) +
+#        np.array([[.5, .5], [.5, .5]]) +
+#         np.array([[.5, 0], [0, .5]]) +
+#         np.array([[.5, 0], [0, .5]]))/4
+# print(qi.purity(rho))
+
+import pickle
+
+pickle.dump(my_system, open("my_system", "wb"))
+pickle.dump(results, open("results", "wb"))
