@@ -5,10 +5,13 @@ Created on Sat Dec  2 18:57:06 2023
 @author: Amine Laghaout
 """
 
-TOL = 1e-13  # Numerical tolerance
-
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import os
+import pandas as pd
+import pickle
+
+TOL = 1e-13  # Numerical tolerance
 
 
 def BS_op(BS, rho):
@@ -260,12 +263,12 @@ def partial_trace(rho, keep, dims, optimize=False):
     ----------
     ρ : 2D array
         Matrix to trace
-    keep : array
+    keep : array of int
         An array of indices of the spaces to keep after
         being traced. For instance, if the space is
         A x B x C x D and we want to trace out B and D,
         keep = [0,2]
-    dims : array
+    dims : array of int
         An array of the dimensions of each space.
         For instance, if the space is A x B x C x D,
         dims = [dim_A, dim_B, dim_C, dim_D]
@@ -312,3 +315,51 @@ def trim_imaginary(matrix, tol=TOL):
         matrix = matrix.real
 
     return matrix
+
+
+# %% Clean below
+
+
+def sqrt_matrix(a):
+    evalues, evectors = np.linalg.eig(a)
+    # Ensuring square root matrix exists
+    assert (evalues >= 0).all()
+    return evectors * np.sqrt(evalues) @ np.linalg.inv(evectors)
+
+
+def fidelity(a, b):
+    # np.trace(a, b)
+
+    pass
+
+
+def reload(
+    results_dir=["..", "..", "..", "..", "physics", "Larsson", "results"]
+):
+    return pickle.load(
+        open(os.path.join(*results_dir + ["results.pkl"]), "rb")
+    )
+
+
+def results_vs_N(results):
+    df = pd.DataFrame(
+        {
+            "config": results.keys(),
+        }
+    ).set_index("config")
+    df["N"] = df.index.to_series().apply(lambda x: len(x))
+    df["purity"] = df.index.to_series().apply(
+        lambda x: results[x][2]["subsystems"]["bomb 1"]["purity"]
+    )
+    df["present"] = df.index.to_series().apply(
+        lambda x: results[x][2]["subsystems"]["bomb 1"]["diagonals"][1]
+    )
+    df["main purity"] = df.index.to_series().apply(
+        lambda x: results[x][1]["subsystems"]["bomb 1"]["purity"]
+    )
+    df["main present"] = df.index.to_series().apply(
+        lambda x: results[x][1]["subsystems"]["bomb 1"]["diagonals"][1]
+    )
+    print(df)
+
+    return df

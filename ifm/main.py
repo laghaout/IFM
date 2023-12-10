@@ -134,7 +134,7 @@ class IFM:
         # %% Initial density matrix
 
         if verbose:
-            print("========== Initial state")
+            print("========== Initial state for `{self.setup}`:")
             self.compute_substates(self.rho, self.modes, self.dims)
 
         # %% The first beam splitter
@@ -183,7 +183,7 @@ class IFM:
 
         # For each measurement output…
         for k in self.results.keys():
-            #### Measurement operator
+            # Measurement operator
 
             # The projection operators as state vectors are all initialized to
             # 0. There are as many projection operators as the dimension of the
@@ -203,12 +203,12 @@ class IFM:
                 assert qi.is_Hermitian(measurement)
             self.results[k]["measurement"] = measurement
 
-            #### Probability of the measurement
+            # Probability of the measurement
 
             probability = qi.Born(measurement, self.rho)
             self.results[k]["probability"] = probability
 
-            #### Post-measurement state
+            # Post-measurement state
 
             if probability > self.tol:
                 post_rho = measurement @ self.rho @ measurement / probability
@@ -229,9 +229,6 @@ class IFM:
             self.results[k]["probability"] for k in range(self.modes + 1)
         ]
         assert -self.tol <= sum(probabilities) <= 1 + self.tol
-        self.plot_probabilities(
-            probabilities, f"{self.setup}: measurement probabilities"
-        )
 
     @staticmethod
     def parse_bombs(bomb):
@@ -347,8 +344,8 @@ class IFM:
     @staticmethod
     def plot_probabilities(values, title=None):
         # TODO: Move to quantum_information.py
-        # TODO: Check all values are actually probabilities, i.e., real, between
-        #       0 and 1, and adding up to unity.
+        # TODO: Check all values are actually probabilities, i.e., real, 
+        #       between 0 and 1, and adding up to unity.
 
         # Create a Seaborn histogram
         sns.set(
@@ -377,68 +374,50 @@ class IFM:
         plt.show()
 
     def report(self):
+        # Plot the probabilities of the different outcomes.
+        probabilities = [
+            self.results[m]["probability"] for m in range(self.modes + 1)
+        ]
+        self.plot_probabilities(
+            probabilities, f"{self.setup}: measurement probabilities"
+        )
+
+        # For each measurement outcome (i.e., photon clicks)...
         for m in range(self.modes + 1):
-            for b in range(1, self.modes + 1):
-                try:
-                    if m != 0:
-                        outcome = f"click at {m}"
-                    else:
-                        outcome = "explosion"
+            # If the outcome is possible...
+            if self.results[m]["subsystems"] is not None:
+                # Determine whether the outcome is a click or an explosion.
+                if m != 0:
+                    outcome = f"click at {m}"
+                else:
+                    outcome = "explosion"
+                # For each bomb, plot the diagonals and the purity
+                # TODO: also plot the fidelity wih the initial state.
+                for b in range(1, self.modes + 1):
                     purity = np.round(
                         self.results[m]["subsystems"][f"bomb {b}"]["purity"], 3
                     )
                     self.plot_probabilities(
-                        self.results[m]["subsystems"][f"bomb {b}"][
-                            "diagonals"
-                        ],
-                        f"{self.setup}: {outcome}, bomb {b}, purity = {purity}",
+                        qi.trim_imaginary(
+                            self.results[m]["subsystems"][f"bomb {b}"][
+                                "diagonals"
+                            ]
+                        ),
+                        f"{self.setup}: {outcome}, bomb {b}," + \
+                        f"purity = {purity}"
                     )
-                except:
-                    print(f"Skipping outcome {m} for setup {self.setup}")
-                    break
+            else:
+                print(f"Skipping outcome {m} for setup `{self.setup}`")
 
 
 # %% Run as a script, not as a module.
 
 if __name__ == "__main__":
-    my_system = {"e" * k: None for k in range(2, 6)}
+    # my_system = {'e' * k: None for k in range(2, 5)} #6
+    my_system = {k: None for k in ["eee"]}
     results = my_system.copy()
     for k in my_system.keys():
-        my_system[k] = IFM(k, validate=False)
+        my_system[k] = IFM(k)
         my_system[k]()
         results[k] = my_system[k].results
         my_system[k].report()
-
-
-def sqrt_matrix(a):
-    evalues, evectors = np.linalg.eig(a)
-    # Ensuring square root matrix exists
-    assert (evalues >= 0).all()
-    return evectors * np.sqrt(evalues) @ np.linalg.inv(evectors)
-
-
-def fidelity(a, b):
-    # np.trace(a, b)
-
-    pass
-
-
-# %%
-
-"""
-- Steering in the main output mode, phase acquisition elsewhere.
-"""
-# rho = (np.array([[0, 0, 0], [0, .5, .5], [0, .5, .5]]) +
-#        np.array([[0, 0, 0], [0, .5, .5], [0, .5, .5]]) +
-#        np.array([[0, 0, 0], [0, .5, 0], [0, 0, .5]]) +
-#        np.array([[0, 0, 0], [0, .5, 0], [0, 0, .5]]))/4
-# rho = (np.array([[.5, .5], [.5, .5]]) +
-#        np.array([[.5, .5], [.5, .5]]) +
-#         np.array([[.5, 0], [0, .5]]) +
-#         np.array([[.5, 0], [0, .5]]))/4
-# print(qi.purity(rho))
-
-import pickle
-
-pickle.dump(my_system, open("my_system", "wb"))
-pickle.dump(results, open("results", "wb"))
