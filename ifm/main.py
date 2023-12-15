@@ -336,15 +336,17 @@ class IFM:
                 subsystems[f"bomb {k+1}"] = {
                     "diagonals": subrho.diagonal(),
                     "purity": purity,
-                    "subrho": subrho,
+                    "subrho": np.round(subrho, qi.DEC),
                 }
 
         return subsystems
 
     @staticmethod
-    def plot_probabilities(values, title=None):
+    def plot_probabilities(
+        values, title=None, xlabel="Mode", ylabel="Probability"
+    ):
         # TODO: Move to quantum_information.py
-        # TODO: Check all values are actually probabilities, i.e., real, 
+        # TODO: Check all values are actually probabilities, i.e., real,
         #       between 0 and 1, and adding up to unity.
 
         # Create a Seaborn histogram
@@ -364,8 +366,8 @@ class IFM:
         )
 
         # Set labels and title
-        plt.xlabel("Mode")
-        plt.ylabel("Probability")
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
         plt.title(title)
 
         # Show the plot
@@ -401,23 +403,45 @@ class IFM:
                         qi.trim_imaginary(
                             self.results[m]["subsystems"][f"bomb {b}"][
                                 "diagonals"
-                            ]
+                            ],
                         ),
-                        f"{self.setup}: {outcome}, bomb {b}," + \
-                        f"purity = {purity}"
+                        f"{self.setup}: {outcome}, bomb {b}, "
+                        + f"purity = {purity}",
+                        xlabel="Diagonal",
                     )
             else:
                 print(f"Skipping outcome {m} for setup `{self.setup}`")
 
 
 # %% Run as a script, not as a module.
-
 if __name__ == "__main__":
-    # my_system = {'e' * k: None for k in range(2, 5)} #6
-    my_system = {k: None for k in ["eee"]}
-    results = my_system.copy()
-    for k in my_system.keys():
-        my_system[k] = IFM(k)
-        my_system[k]()
-        results[k] = my_system[k].results
-        my_system[k].report()
+    if False:
+        # my_system = {'e' * k: None for k in range(2, 5)} #6
+        my_system = {k: None for k in ["eee"]}
+        results = my_system.copy()
+        for k in my_system.keys():
+            my_system[k] = IFM(k)
+            my_system[k]()
+            results[k] = my_system[k].results
+            my_system[k].report()
+    else:
+        base_config = "ec"
+        results = qi.reload(base_config)
+
+    df = qi.results_vs_N(results, outcome=2)
+    print(df)
+    rho_k = qi.get_subrho(base_config, 2, "bomb 1", results)
+
+    my_config = "ecc"
+    reconstructed_rho_k = qi.reconstruct_disturbed(
+        N=len(my_config),
+        rho_f=qi.get_subrho(my_config, 2, "bomb 1", results),
+        rho_0=np.array([[0, 0, 0], [0, 0.5, 0.5], [0, 0.5, 0.5]]),
+    )
+
+    if np.allclose(reconstructed_rho_k, rho_k, qi.TOL) is True:
+        print("Good!")
+    else:
+        print("Bad!")
+        print(rho_k)
+        print(reconstructed_rho_k)

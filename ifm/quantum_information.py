@@ -5,13 +5,16 @@ Created on Sat Dec  2 18:57:06 2023
 @author: Amine Laghaout
 """
 
+import math
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
 import pickle
 
-TOL = 1e-13  # Numerical tolerance
+# Numerical tolerance
+DEC = 13
+TOL = 10 ** (-DEC)
 
 
 def BS_op(BS, rho):
@@ -334,14 +337,15 @@ def fidelity(a, b):
 
 
 def reload(
-    results_dir=["..", "..", "..", "..", "physics", "Larsson", "results"]
+    config,
+    results_dir=["..", "..", "..", "..", "physics", "Larsson", "results"],
 ):
     return pickle.load(
-        open(os.path.join(*results_dir + ["results.pkl"]), "rb")
+        open(os.path.join(*results_dir + [f"{config}_results.pkl"]), "rb")
     )
 
 
-def results_vs_N(results):
+def results_vs_N(results, main=1, outcome=2, subsystem="bomb 1"):
     df = pd.DataFrame(
         {
             "config": results.keys(),
@@ -349,17 +353,41 @@ def results_vs_N(results):
     ).set_index("config")
     df["N"] = df.index.to_series().apply(lambda x: len(x))
     df["purity"] = df.index.to_series().apply(
-        lambda x: results[x][2]["subsystems"]["bomb 1"]["purity"]
+        lambda x: results[x][outcome]["subsystems"][subsystem]["purity"]
     )
     df["present"] = df.index.to_series().apply(
-        lambda x: results[x][2]["subsystems"]["bomb 1"]["diagonals"][1]
+        lambda x: results[x][outcome]["subsystems"][subsystem]["diagonals"][1]
     )
     df["main purity"] = df.index.to_series().apply(
-        lambda x: results[x][1]["subsystems"]["bomb 1"]["purity"]
+        lambda x: results[x][main]["subsystems"][subsystem]["purity"]
     )
     df["main present"] = df.index.to_series().apply(
-        lambda x: results[x][1]["subsystems"]["bomb 1"]["diagonals"][1]
+        lambda x: results[x][main]["subsystems"][subsystem]["diagonals"][1]
     )
-    print(df)
 
     return df
+
+
+def get_subrho(config, outcome, bomb, results):
+    return np.round(
+        results[config][outcome]["subsystems"][bomb]["subrho"], DEC
+    )
+
+
+def predicted_purity(rho_i, rho_f, N, k=2):
+    C = math.comb(N, k)
+
+    a_f = N - 1
+    a_i = C - N + 1
+
+    print("a_i:", a_i, "a_f:", a_f, "C:", C)
+
+    return purity((a_f * rho_f + a_i * rho_i) / C)
+
+
+def reconstruct_disturbed(N, rho_f, rho_0, k=2):
+    C = math.comb(N, k)
+
+    rho_k = (C * rho_f + (N - 1 - C) * rho_0) / (N - 1)
+
+    return np.round(rho_k, DEC)
