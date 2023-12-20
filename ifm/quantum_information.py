@@ -374,20 +374,20 @@ def get_subrho(config, outcome, bomb, results):
     )
 
 
-def predicted_purity(rho_i, rho_f, N, k=2):
+def predicted_purity(undisturbed, disturbed, N, k=2):
     C = math.comb(N, k)
 
     a_f = N - 1
     a_i = C - N + 1
 
-    print("a_i:", a_i, "a_f:", a_f, "C:", C)
+    # print("a_i:", a_i, "a_f:", a_f, "C:", C)
 
-    return purity((a_f * rho_f + a_i * rho_i) / C)
+    return purity((a_f * disturbed + a_i * undisturbed) / C)
 
 
-def reconstruct_disturbed(N, rho_f, rho_0, k=2):
+def reconstruct_disturbed(N, final, undisturbed, k=2):
     C = math.comb(N, k)
 
-    rho_k = (C * rho_f + (N - 1 - C) * rho_0) / (N - 1)
+    rho_k = (C * final + (N - 1 - C) * undisturbed) / (N - 1)
 
     return np.round(rho_k, DEC)

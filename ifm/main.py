@@ -15,18 +15,27 @@ import quantum_information as qi
 import seaborn as sns
 
 
+bomb_dict = {
+    "0": np.array([0, 0, 1]),
+    "1": np.array([0, 1, 0]),
+    "½": np.array([0, 1, 1]) / np.sqrt(2),
+    "⅓": np.array([0, 1, np.sqrt(2)]) / np.sqrt(3),
+    "⅔": np.array([0, np.sqrt(2), 1]) / np.sqrt(3),
+}
+
+
 class IFM:
-    def __init__(self, bombs, gamma=1, tol=1e-13, validate=True):
+    def __init__(self, bombs, gamma=1, tol=qi.TOL, validate=True):
         """
         Parameters
         ----------
         bombs : tuple of np.ndarray or str
             Quantum states of the bombs. These can be specified explicitly in a
-            tuple of NumPy arrays or as a string of characters where
-            - 'c' represents that the bomb is "cleared" from the photon's path,
-            - 'b' represents that the bomb is "blocking" the photon's path, and
-            - 'w' represents that the bomb is in a coherent superposition of
-              being in the photon's path and away from the photon's path.
+            tuple of NumPy arrays or as a string of characters where each
+            character encodes a coherent superposition of the bomb being on the
+            path of the photon and away from it. E.g., `⅓` represents the case
+            where the photons is coherently ⅓ on the path of the photon and ⅔
+            away from it.
             Each bomb lives in a 3-dimensional Hilbert space where
             - dimension 0 represents the exploded bomb,
             - dimension 1 represents the bomb in the photon's path, and
@@ -45,6 +54,9 @@ class IFM:
             Numerical tolerance.
         validate : bool
             Validate the math (e.g., unitarity of the beam splitter, )?
+        bomb_dict : dict
+            Dictionary which maps the shorthand character for a bomb's state to
+            a vector representation in the bomb Hilbert space.
 
         Returns
         -------
@@ -55,8 +67,8 @@ class IFM:
         # photon by the path it is exciting, generate the corresponding state
         # vectors.
         if isinstance(bombs, str) and isinstance(gamma, int):
-            self.setup = f"{gamma}{bombs}"  # Record the initial setup
-            bombs = tuple(self.parse_bombs(b) for b in bombs)
+            self.setup = f"{gamma}:{bombs}"  # Record the initial setup
+            bombs = tuple(bomb_dict[b.upper()] for b in bombs)
             gamma_temp = np.zeros(len(bombs) + 1)
             gamma_temp[gamma] = 1
             gamma = gamma_temp
@@ -94,12 +106,6 @@ class IFM:
         for k in range(self.modes - 1):
             self.bombs = np.kron(self.bombs, bombs[k + 1])
 
-        # Consrtuct the initial density matrix.
-        input_state = np.kron(self.gamma, self.bombs)
-        self.rho = np.outer(input_state, input_state)
-        if self.validate:
-            assert qi.is_density_matrix(self.rho)
-
     def __call__(self, interact=True, verbose=True):
         """
         Run the photon through the Mach-Zehnder interferometer.
@@ -116,6 +122,12 @@ class IFM:
         None.
         """
 
+        # Consrtuct the initial density matrix.
+        input_state = np.kron(self.gamma, self.bombs)
+        self.rho = np.outer(input_state, input_state)
+        if self.validate:
+            assert qi.is_density_matrix(self.rho)
+
         # results
         self.results = {
             m: {
@@ -125,8 +137,8 @@ class IFM:
                 "subsystems": {  # Output subsystems
                     "subrho": None,  # Output subsystem states
                     "purity": None,  # Purity of subsystem state
-                    "diagonals": None,
-                },  # Diagonal of subsystem states
+                    "diagonals": None,  # Diagonal of subsystem states
+                },
             }
             for m in range(self.modes + 1)
         }
@@ -134,7 +146,7 @@ class IFM:
         # %% Initial density matrix
 
         if verbose:
-            print("========== Initial state for `{self.setup}`:")
+            print(f"========== Initial state for `{self.setup}`:")
             self.compute_substates(self.rho, self.modes, self.dims)
 
         # %% The first beam splitter
@@ -229,21 +241,6 @@ class IFM:
             self.results[k]["probability"] for k in range(self.modes + 1)
         ]
         assert -self.tol <= sum(probabilities) <= 1 + self.tol
-
-    @staticmethod
-    def parse_bombs(bomb):
-        # 'C'leared: The is a bomb remotely and the vacuum locally.
-        if bomb.upper() == "C":
-            return np.array([0, 0, 1])
-        # 'B'locked: There is a bomb locally and the vacuum remotely.
-        elif bomb.upper() == "B":
-            return np.array([0, 1, 0])
-        # 'E'qual: There is a bomb that in a superposition of being local and
-        # remote.
-        elif bomb.upper() == "E":
-            return np.array([0, 1, 1]) / np.sqrt(2)
-        else:
-            raise ValueError("Wrong letter coding for the bomb")
 
     def interac(self):  # TODO: Check this function
         rho = self.rho.copy()
@@ -413,35 +410,56 @@ class IFM:
                 print(f"Skipping outcome {m} for setup `{self.setup}`")
 
 
-# %% Run as a script, not as a module.
-if __name__ == "__main__":
-    if False:
-        # my_system = {'e' * k: None for k in range(2, 5)} #6
-        my_system = {k: None for k in ["eee"]}
-        results = my_system.copy()
-        for k in my_system.keys():
-            my_system[k] = IFM(k)
-            my_system[k]()
-            results[k] = my_system[k].results
-            my_system[k].report()
-    else:
-        base_config = "ec"
-        results = qi.reload(base_config)
+# %%
 
-    df = qi.results_vs_N(results, outcome=2)
-    print(df)
-    rho_k = qi.get_subrho(base_config, 2, "bomb 1", results)
 
-    my_config = "ecc"
-    reconstructed_rho_k = qi.reconstruct_disturbed(
+def foo(results, initial_bomb, base_config, my_config, outcome, bomb):
+    undisturbed = np.outer(bomb_dict[initial_bomb], bomb_dict[initial_bomb])
+    disturbed = qi.get_subrho(base_config, outcome, bomb, results)
+    final = qi.get_subrho(my_config, outcome, bomb, results)
+
+    reconstructed_disturbed = qi.reconstruct_disturbed(
         N=len(my_config),
-        rho_f=qi.get_subrho(my_config, 2, "bomb 1", results),
-        rho_0=np.array([[0, 0, 0], [0, 0.5, 0.5], [0, 0.5, 0.5]]),
+        final=final,
+        undisturbed=undisturbed,
     )
 
-    if np.allclose(reconstructed_rho_k, rho_k, qi.TOL) is True:
+    if np.allclose(reconstructed_disturbed, disturbed, qi.TOL) is True:
         print("Good!")
     else:
-        print("Bad!")
-        print(rho_k)
-        print(reconstructed_rho_k)
+        print("=============== Bad!")
+        print(disturbed)
+        print(reconstructed_disturbed)
+
+
+# %% Run as a script, not as a module.
+if __name__ == "__main__":
+    if True:
+        my_system = {k: None for k in ["⅔⅔", "⅔⅔⅔"]}
+        # my_system = '0⅓'  # ½⅓⅔
+
+        if isinstance(my_system, dict):
+            results = my_system.copy()
+            for k in my_system.keys():
+                my_system[k] = IFM(k)
+                my_system[k]()
+                results[k] = my_system[k].results
+                my_system[k].report()
+
+            df = qi.results_vs_N(results, outcome=2)
+            print(df)
+            # %%
+            foo(
+                results=results,
+                initial_bomb="⅔",
+                base_config="⅔⅔",
+                my_config="⅔⅔⅔",
+                outcome=2,
+                bomb="bomb 2",
+            )
+        # %%
+        elif isinstance(my_system, str):
+            my_system = IFM(my_system)
+            my_system()
+            results = my_system.results
+            my_system.report()
