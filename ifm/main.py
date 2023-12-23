@@ -67,7 +67,7 @@ class IFM:
         # photon by the path it is exciting, generate the corresponding state
         # vectors.
         if isinstance(bombs, str) and isinstance(gamma, int):
-            self.setup = f"{gamma}:{bombs}"  # Record the initial setup
+            self.setup = f"{gamma}›{bombs}"  # Record the initial setup
             bombs = tuple(bomb_dict[b.upper()] for b in bombs)
             gamma_temp = np.zeros(len(bombs) + 1)
             gamma_temp[gamma] = 1
@@ -146,7 +146,7 @@ class IFM:
         # %% Initial density matrix
 
         if verbose:
-            print(f"========== Initial state for `{self.setup}`:")
+            print(f"\n== {self.setup} ================== Initial state:")
             self.compute_substates(self.rho, self.modes, self.dims)
 
         # %% The first beam splitter
@@ -163,7 +163,7 @@ class IFM:
             assert qi.is_density_matrix(self.rho)
 
         if verbose:
-            print("\n========== After the first beam splitter")
+            print(f"\n== {self.setup} ======== After the first beam splitter")
             self.compute_substates(self.rho, self.modes, self.dims)
 
         # %% The photon-bombs interactions
@@ -175,7 +175,9 @@ class IFM:
                 assert qi.is_density_matrix(self.rho)
 
             if verbose:
-                print("\n========== After the photon-bombs interactions")
+                print(
+                    f"\n== {self.setup} ======== After the photon-bombs interactions"
+                )
                 self.compute_substates(self.rho, self.modes, self.dims)
 
         # %% The second beam splitter
@@ -185,13 +187,13 @@ class IFM:
             assert qi.is_density_matrix(self.rho)
 
         if verbose:
-            print("\n========== After the second beam splitter")
+            print(f"\n== {self.setup} ======== After the second beam splitter")
             self.compute_substates(self.rho, self.modes, self.dims)
 
         # %% Photon measurements in the Fock basis
 
         if verbose:
-            print("\n========== After the photon measurements")
+            print(f"\n== {self.setup} ======== After the photon measurements")
 
         # For each measurement output…
         for k in self.results.keys():
@@ -231,7 +233,9 @@ class IFM:
                 post_rho = None
 
             if verbose:
-                print(f"\n===== Prob({k}): {np.round(probability,3)} =====")
+                print(
+                    f"\n== {self.setup} === Prob({k}): {np.round(probability,3)}"
+                )
             self.results[k]["subsystems"] = self.compute_substates(
                 post_rho, self.modes, self.dims, verbose=verbose
             )
@@ -434,32 +438,73 @@ def foo(results, initial_bomb, base_config, my_config, outcome, bomb):
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
-    if True:
-        my_system = {k: None for k in ["⅔⅔", "⅔⅔⅔"]}
-        # my_system = '0⅓'  # ½⅓⅔
+    # my_system = {k: None for k in ['⅔⅔', '⅔⅔⅔', '⅔⅔⅔⅔']}
+    my_system = "½½"  # ½⅓⅔
 
-        if isinstance(my_system, dict):
-            results = my_system.copy()
-            for k in my_system.keys():
-                my_system[k] = IFM(k)
-                my_system[k]()
-                results[k] = my_system[k].results
-                my_system[k].report()
+    if isinstance(my_system, dict):
+        results = my_system.copy()
+        for k in my_system.keys():
+            my_system[k] = IFM(k)
+            my_system[k]()
+            results[k] = my_system[k].results
+            my_system[k].report()
 
-            df = qi.results_vs_N(results, outcome=2)
-            print(df)
-            # %%
-            foo(
-                results=results,
-                initial_bomb="⅔",
-                base_config="⅔⅔",
-                my_config="⅔⅔⅔",
-                outcome=2,
-                bomb="bomb 2",
-            )
-        # %%
-        elif isinstance(my_system, str):
-            my_system = IFM(my_system)
-            my_system()
-            results = my_system.results
-            my_system.report()
+        df = qi.results_vs_N(results, outcome=2)
+        print(df)
+        foo(
+            results=results,
+            initial_bomb="⅔",
+            base_config="⅔⅔",
+            my_config="⅔⅔⅔",
+            outcome=2,
+            bomb="bomb 2",
+        )
+    elif isinstance(my_system, str):
+        my_system = IFM(my_system)
+        my_system()
+        results = my_system.results
+        my_system.report()
+
+# %%
+
+import numpy as np
+
+
+def post_select(m, g, b):
+    b = np.vstack((np.array([np.nan] * 3), b))
+
+    pm = (-1) ** (m + 1)
+
+    P = (
+        np.abs(g[1] * b[1, 2] * b[2, 1]) ** 2
+        + np.abs((g[1] + pm * g[2]) * b[1, 2] * b[2, 2]) ** 2
+        + np.abs(g[2] * b[1, 1] * b[2, 2]) ** 2
+    ) / 2
+
+    bomb = None
+    # bomb = {
+    #     1: np.array(
+    #         [[None,
+    #           None
+    #           ],
+    #          [None,
+    #           None
+    #           ]])/(2*P),
+    #     2: np.array(
+    #         [[None,
+    #           None
+    #           ],
+    #          [None,
+    #           None
+    #           ]])/(2*P),
+    #     }
+
+    return P, bomb
+
+
+P, bomb = post_select(
+    2,
+    np.array([0, 1, 1]) / np.sqrt(2),
+    np.array([[0, 1, 1], [0, 1, 1]]) / np.sqrt(2),
+)
+print(P)

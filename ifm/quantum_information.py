@@ -74,7 +74,7 @@ def symmetric_BS(N, include_vacuum_mode=True):
         BS[0, 0] = np.sqrt(N)
     BS /= np.sqrt(N)
 
-    return BS
+    return trim_imaginary(BS)
 
 
 def plot_density_matrix(rho, title=None):
