@@ -23,6 +23,8 @@ bomb_dict = {
     "⅔": np.array([0, np.sqrt(2), 1]) / np.sqrt(3),
 }
 
+ROUND = 4
+
 
 class IFM:
     def __init__(self, bombs, gamma=1, tol=qi.TOL, validate=True):
@@ -234,7 +236,7 @@ class IFM:
 
             if verbose:
                 print(
-                    f"\n== {self.setup} === Prob({k}): {np.round(probability,3)}"
+                    f"\n== {self.setup} === Prob({k}): {np.round(probability, ROUND)}"
                 )
             self.results[k]["subsystems"] = self.compute_substates(
                 post_rho, self.modes, self.dims, verbose=verbose
@@ -317,8 +319,8 @@ class IFM:
                 assert qi.is_density_matrix(subrho)
             purity = qi.purity(subrho, self.tol)
             if verbose:
-                print("photon, purity:", np.round(purity, 4))
-                print(np.round(subrho, 3))
+                print("photon, purity:", np.round(purity, ROUND))
+                print(np.round(subrho, ROUND))
             subsystems["photon"] = {
                 "diagonals": subrho.diagonal(),
                 "purity": purity,
@@ -332,8 +334,8 @@ class IFM:
                     assert qi.is_density_matrix(subrho)
                 purity = qi.purity(subrho, self.tol)
                 if verbose:
-                    print(f"bomb {k+1}, purity:", np.round(purity, 4))
-                    print(np.round(subrho, 3))
+                    print(f"bomb {k+1}, purity:", np.round(purity, ROUND))
+                    print(np.round(subrho, ROUND))
                 subsystems[f"bomb {k+1}"] = {
                     "diagonals": subrho.diagonal(),
                     "purity": purity,
@@ -398,7 +400,8 @@ class IFM:
                 # TODO: also plot the fidelity wih the initial state.
                 for b in range(1, self.modes + 1):
                     purity = np.round(
-                        self.results[m]["subsystems"][f"bomb {b}"]["purity"], 3
+                        self.results[m]["subsystems"][f"bomb {b}"]["purity"],
+                        ROUND,
                     )
                     self.plot_probabilities(
                         qi.trim_imaginary(
@@ -417,7 +420,77 @@ class IFM:
 # %%
 
 
-def foo(results, initial_bomb, base_config, my_config, outcome, bomb):
+def closed_form(g, b):
+    b_str = b
+    b = np.vstack((np.array([np.nan] * 3),) + tuple(bomb_dict[x] for x in b))
+
+    results = {
+        m: {"probability": None, "subsystems": None}
+        for m in range(1, len(b_str) + 1)
+    }
+
+    for m in results.keys():
+        pm = (-1) ** (m + 1)
+
+        P = (
+            np.abs(g[1] * b[1, 2] * b[2, 1]) ** 2
+            + np.abs((g[1] + pm * g[2]) * b[1, 2] * b[2, 2]) ** 2
+            + np.abs(g[2] * b[1, 1] * b[2, 2]) ** 2
+        ) / 2
+
+        bomb = {
+            "bomb 1": np.array(
+                [
+                    [
+                        np.abs(g[2] * b[1, 1] * b[2, 2]) ** 2,
+                        g[2]
+                        * b[1, 1]
+                        * b[2, 2]
+                        * np.conj((g[1] + pm * g[2]) * b[1, 2] * b[2, 2]),
+                    ],
+                    [
+                        pm
+                        * (g[1] + pm * g[2])
+                        * b[1, 2]
+                        * b[2, 2]
+                        * np.conj(g[2] * b[1, 1] * b[2, 2]),
+                        np.abs(g[1] * b[1, 2] * b[2, 1]) ** 2
+                        + np.abs((g[1] + pm * g[2]) * b[1, 2] * b[2, 2]) ** 2,
+                    ],
+                ]
+            )
+            / (2 * P),
+            "bomb 2": np.array(
+                [
+                    [
+                        np.abs(g[1] * b[1, 2] * b[2, 1]) ** 2,
+                        g[1]
+                        * b[1, 2]
+                        * b[2, 1]
+                        * np.conj((g[1] + pm * g[2]) * b[1, 2] * b[2, 2]),
+                    ],
+                    [
+                        (g[1] + pm * g[2])
+                        * b[1, 2]
+                        * b[2, 2]
+                        * np.conj(g[1] * b[1, 2] * b[2, 1]),
+                        np.abs((g[1] + pm * g[2]) * b[1, 2] * b[2, 2]) ** 2
+                        + np.abs(g[2] * b[1, 1] * b[2, 2]) ** 2,
+                    ],
+                ]
+            )
+            / (2 * P),
+        }
+
+        results[m]["probability"] = P
+        results[m]["subsystems"] = bomb
+
+    return results
+
+
+def check_reconstruction(
+    results, initial_bomb, base_config, my_config, outcome, bomb
+):
     undisturbed = np.outer(bomb_dict[initial_bomb], bomb_dict[initial_bomb])
     disturbed = qi.get_subrho(base_config, outcome, bomb, results)
     final = qi.get_subrho(my_config, outcome, bomb, results)
@@ -439,7 +512,7 @@ def foo(results, initial_bomb, base_config, my_config, outcome, bomb):
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
     # my_system = {k: None for k in ['⅔⅔', '⅔⅔⅔', '⅔⅔⅔⅔']}
-    my_system = "½½"  # ½⅓⅔
+    my_system = "⅔⅔"  # ½⅓⅔
 
     if isinstance(my_system, dict):
         results = my_system.copy()
@@ -451,7 +524,7 @@ if __name__ == "__main__":
 
         df = qi.results_vs_N(results, outcome=2)
         print(df)
-        foo(
+        check_reconstruction(
             results=results,
             initial_bomb="⅔",
             base_config="⅔⅔",
@@ -460,51 +533,26 @@ if __name__ == "__main__":
             bomb="bomb 2",
         )
     elif isinstance(my_system, str):
+        my_bombs = my_system
         my_system = IFM(my_system)
         my_system()
         results = my_system.results
         my_system.report()
 
-# %%
-
-import numpy as np
-
-
-def post_select(m, g, b):
-    b = np.vstack((np.array([np.nan] * 3), b))
-
-    pm = (-1) ** (m + 1)
-
-    P = (
-        np.abs(g[1] * b[1, 2] * b[2, 1]) ** 2
-        + np.abs((g[1] + pm * g[2]) * b[1, 2] * b[2, 2]) ** 2
-        + np.abs(g[2] * b[1, 1] * b[2, 2]) ** 2
-    ) / 2
-
-    bomb = None
-    # bomb = {
-    #     1: np.array(
-    #         [[None,
-    #           None
-    #           ],
-    #          [None,
-    #           None
-    #           ]])/(2*P),
-    #     2: np.array(
-    #         [[None,
-    #           None
-    #           ],
-    #          [None,
-    #           None
-    #           ]])/(2*P),
-    #     }
-
-    return P, bomb
-
-
-P, bomb = post_select(
-    2,
-    np.array([0, 1, 1]) / np.sqrt(2),
-    np.array([[0, 1, 1], [0, 1, 1]]) / np.sqrt(2),
-)
-print(P)
+        # Check the closed-form results matches the numercial results.
+        if len(my_bombs) == 2:
+            results_closed_form = closed_form(
+                np.array([0, 1, 1]) / np.sqrt(2), my_bombs
+            )
+            for m in sorted(results_closed_form.keys()):
+                assert np.allclose(
+                    results[m]["probability"],
+                    results_closed_form[m]["probability"],
+                    qi.TOL,
+                )
+                for k in results_closed_form[m]["subsystems"].keys():
+                    assert np.allclose(
+                        results[m]["subsystems"][k]["subrho"][1:, 1:],
+                        results_closed_form[m]["subsystems"][k],
+                        qi.TOL,
+                    )
