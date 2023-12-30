@@ -26,7 +26,6 @@ bomb_dict = {
 }
 
 
-
 class IFM:
     def __init__(self, bombs, gamma=1, tol=qi.TOL, validate=True):
         """
@@ -460,7 +459,9 @@ def closed_form(g, b):
                     ],
                 ]
             )
-            / (2 * P) if P > 0 else None,
+            / (2 * P)
+            if P > 0
+            else None,
             "bomb 2": np.array(
                 [
                     [
@@ -480,21 +481,26 @@ def closed_form(g, b):
                     ],
                 ]
             )
-            / (2 * P) if P > 0 else None,
+            / (2 * P)
+            if P > 0
+            else None,
         }
 
-        results[m]['probability'] = P
-        results[m]['subsystems'] = bomb
-        
-        
+        results[m]["probability"] = P
+        results[m]["subsystems"] = bomb
+
     print("\nChecking the closed-form expression...")
     for m in results.keys():
-        print(f'== ›{b_str} === Prob({m}):', 
-              np.round(results[m]['probability'], ROUND))
-        for k in results[m]['subsystems'].keys():
-            print(f"{k}, purity:", 
-                  np.round(qi.purity(results[m]['subsystems'][k]), ROUND))
-            print(results[m]['subsystems'][k])
+        print(
+            f"== ›{b_str} === Prob({m}):",
+            np.round(results[m]["probability"], ROUND),
+        )
+        for k in results[m]["subsystems"].keys():
+            print(
+                f"{k}, purity:",
+                np.round(qi.purity(results[m]["subsystems"][k]), ROUND),
+            )
+            print(results[m]["subsystems"][k])
 
     return results
 
@@ -507,10 +513,7 @@ def check_reconstruction(
     final = qi.get_subrho(my_config, outcome, bomb, results)
 
     reconstructed_disturbed = qi.reconstruct_disturbed(
-        N=len(my_config),
-        final=final,
-        undisturbed=undisturbed,
-        k=k
+        N=len(my_config), final=final, undisturbed=undisturbed, k=k
     )
 
     if np.allclose(reconstructed_disturbed, disturbed, qi.TOL) is True:
@@ -523,18 +526,18 @@ def check_reconstruction(
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
-    my_system = {k: None for k in 
-                  ['⅔0', '⅔00', '⅔000', 
-                   '⅔⅔', '⅔⅔0', '⅔⅔00',
-                   '⅔⅔⅔', '⅔⅔⅔0', '⅔⅔⅔⅔',
-                   '½0', '½00', '½000', 
-                   '½½', '½½0', '½½00',
-                   '½½½', '½½½0', '½½½½',                   
-                   '⅓0', '⅓00', '⅓000', 
-                   '⅓⅓', '⅓⅓0', '⅓⅓00',
-                   '⅓⅓⅓', '⅓⅓⅓0', '⅓⅓⅓⅓'                   
-                   ]}
-    # my_system = '⅓00'  # ½⅓⅔
+    # my_system = {k: None for k in
+    #              ['⅔0',     '⅔00',  '⅔000',
+    #               '⅔⅔',     '⅔⅔0',  '⅔⅔00',
+    #               '⅔⅔⅔',    '⅔⅔⅔0', '⅔⅔⅔⅔',
+    #               '½0',     '½00',  '½000',
+    #               '½½',     '½½0',  '½½00',
+    #               '½½½', '½½½0', '½½½½',
+    #               '⅓0', '⅓00', '⅓000',
+    #               '⅓⅓', '⅓⅓0', '⅓⅓00',
+    #               '⅓⅓⅓', '⅓⅓⅓0', '⅓⅓⅓⅓'
+    #              ]}
+    my_system = "⅔000"  # ½⅓⅔
 
     if isinstance(my_system, dict):
         results = my_system.copy()
@@ -544,15 +547,15 @@ if __name__ == "__main__":
             results[k] = my_system[k].results
             my_system[k].report()
 
-        df = qi.results_vs_N(results, outcome=2, subsystem='bomb 1')
+        df = qi.results_vs_N(results, outcome=2, subsystem="bomb 1")
         print(df)
         check_reconstruction(
             results=results,
-            initial_bomb='⅔',
-            base_config='⅔⅔',
-            my_config='⅔⅔0',
+            initial_bomb="⅓",
+            base_config="⅓⅓",
+            my_config="⅓⅓⅓⅓",
             outcome=2,
-            bomb='bomb 1',
+            bomb="bomb 1",
             k=2,
         )
     elif isinstance(my_system, str):
@@ -579,11 +582,44 @@ if __name__ == "__main__":
                         results_closed_form[m]["subsystems"][k],
                         qi.TOL,
                     )
-            print('Closed-form expression checked!')
-            
-#%%
-results_closed_form = closed_form(
-    np.array([0, 1, 1]) / np.sqrt(2), '⅔⅔')  # ½⅓⅔
-# A = results_closed_form[2]['subsystems']['bomb 1']
-# B = results_closed_form[2]['subsystems']['bomb 2']
+            print("Closed-form expression checked!")
 
+    # %% Closed form expression
+
+    # results_closed_form = closed_form(
+    #     np.array([0, 1, 1]) / np.sqrt(2), '⅔⅔')  # ½⅓⅔
+    # # A = results_closed_form[2]['subsystems']['bomb 1']
+    # # B = results_closed_form[2]['subsystems']['bomb 2']
+
+    # %% Reloaded results
+
+    import quantum_information as qi
+
+    results = qi.reload()
+    print(qi.get_subrho("½½00", 2, "bomb 1", results))
+
+# %%
+
+import numpy as np
+
+# Define the matrix B and the vector v
+B = np.array([[0.5, 1, 0.5], [0.5, 0, 0], [0.5, 0, 0], [0.5, 0, 0.5]])
+v = np.array([0.75, 0.25 * (1 - 1j), 0.25 * (1 + 1j), 0.25])
+
+k = 0.2357022603955
+B = np.array(
+    [
+        [1 / 3, 1, 0.5],
+        [np.sqrt(2) / 3, 0, 0],
+        [np.sqrt(2) / 3, 0, 0],
+        [2 / 3, 0, 0.5],
+    ]
+)
+v = np.array([2 / 3, k * (1 - 1j), k * (1 + 1j), 1 / 3])
+
+# Solve for x
+# x = np.linalg.solve(B, v)
+x, residuals, rank, s = np.linalg.lstsq(B, v, rcond=None)
+
+print("Residual:", residuals)
+print(x)

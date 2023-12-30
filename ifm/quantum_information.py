@@ -337,11 +337,10 @@ def fidelity(a, b):
 
 
 def reload(
-    config,
-    results_dir=["..", "..", "..", "..", "physics", "Larsson", "results"],
+    results_dir=["..", "..", "..", "..", "physics", "Larsson", "results"]
 ):
     return pickle.load(
-        open(os.path.join(*results_dir + [f"{config}_results.pkl"]), "rb")
+        open(os.path.join(*results_dir + ["results.pkl"]), "rb")
     )
 
 
