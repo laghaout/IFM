@@ -367,10 +367,13 @@ def results_vs_N(results, main=1, outcome=2, subsystem="bomb 1"):
     return df
 
 
-def get_subrho(config, outcome, bomb, results):
-    return np.round(
-        results[config][outcome]["subsystems"][bomb]["subrho"], DEC
-    )
+def get_subrho(config, outcome, bomb, results, rounding=DEC):
+    if rounding is None:
+        return results[config][outcome]["subsystems"][bomb]["subrho"]
+    elif isinstance(rounding, int):
+        return np.round(
+            results[config][outcome]["subsystems"][bomb]["subrho"], DEC
+        )
 
 
 def predicted_purity(undisturbed, disturbed, N, k=2):

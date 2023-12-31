@@ -537,7 +537,7 @@ if __name__ == "__main__":
     #               '⅓⅓', '⅓⅓0', '⅓⅓00',
     #               '⅓⅓⅓', '⅓⅓⅓0', '⅓⅓⅓⅓'
     #              ]}
-    my_system = "⅔000"  # ½⅓⅔
+    my_system = "½000"  # ½⅓⅔
 
     if isinstance(my_system, dict):
         results = my_system.copy()
@@ -597,29 +597,33 @@ if __name__ == "__main__":
 
     results = qi.reload()
     print(qi.get_subrho("½½00", 2, "bomb 1", results))
+    df = qi.results_vs_N(results, outcome=2, subsystem="bomb 1")
 
 # %%
 
-import numpy as np
 
-# Define the matrix B and the vector v
-B = np.array([[0.5, 1, 0.5], [0.5, 0, 0], [0.5, 0, 0], [0.5, 0, 0.5]])
-v = np.array([0.75, 0.25 * (1 - 1j), 0.25 * (1 + 1j), 0.25])
+def decompose(config, outcome, bomb, base):
+    import numpy as np
 
-k = 0.2357022603955
-B = np.array(
-    [
-        [1 / 3, 1, 0.5],
-        [np.sqrt(2) / 3, 0, 0],
-        [np.sqrt(2) / 3, 0, 0],
-        [2 / 3, 0, 0.5],
-    ]
-)
-v = np.array([2 / 3, k * (1 - 1j), k * (1 + 1j), 1 / 3])
+    Y = qi.get_subrho(config, outcome, bomb, results, None)[1:, 1:].reshape(
+        -1, 1
+    )
+    R = dict(
+        u=np.outer(bomb_dict[base], bomb_dict[base])[1:, 1:].reshape(-1, 1),
+        # c=np.array([[1,0], [0,0]]).reshape(-1, 1),
+        # r=np.array([[0,0], [0,1]]).reshape(-1, 1),
+        # m=np.array([[bomb_dict[base][1]**2,0], [0, bomb_dict[base][2]**2]]).reshape(-1, 1),
+        e=np.array([[1, 0], [0, 1]]).reshape(-1, 1) / 2,
+    )
 
-# Solve for x
-# x = np.linalg.solve(B, v)
-x, residuals, rank, s = np.linalg.lstsq(B, v, rcond=None)
+    components = np.hstack([R[m] for m in sorted(R.keys())])
+    x, residuals, rank, s = np.linalg.lstsq(components, Y, rcond=None)
+    print("Residuals:", residuals)
+    print("Coefficients:")
+    for k, f in enumerate(["u", "b"]):
+        print(f"\t{f} =", np.round(x[k][0], qi.DEC))
 
-print("Residual:", residuals)
-print(x)
+    return x, residuals
+
+
+f, residuals = decompose("⅓⅓⅓⅓", 2, "bomb 1", "⅓")
