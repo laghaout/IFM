@@ -596,34 +596,62 @@ if __name__ == "__main__":
     import quantum_information as qi
 
     results = qi.reload()
-    print(qi.get_subrho("½½00", 2, "bomb 1", results))
-    df = qi.results_vs_N(results, outcome=2, subsystem="bomb 1")
+    print(qi.get_subrho('½½00', 2, 'bomb 1', results))
+    df = qi.results_vs_N(results, outcome=2, subsystem='bomb 1')
 
 # %%
 
 
-def decompose(config, outcome, bomb, base):
-    import numpy as np
+def decompose(config, outcome, bomb, verbose=False):
+
+    base = config[int(bomb.split(' ')[1])-1]
+    
 
     Y = qi.get_subrho(config, outcome, bomb, results, None)[1:, 1:].reshape(
         -1, 1
     )
+    
+    # Convex components
     R = dict(
-        u=np.outer(bomb_dict[base], bomb_dict[base])[1:, 1:].reshape(-1, 1),
+        undisturbed=np.outer(bomb_dict[base], bomb_dict[base])[1:, 1:].reshape(-1, 1),
         # c=np.array([[1,0], [0,0]]).reshape(-1, 1),
         # r=np.array([[0,0], [0,1]]).reshape(-1, 1),
         # m=np.array([[bomb_dict[base][1]**2,0], [0, bomb_dict[base][2]**2]]).reshape(-1, 1),
-        e=np.array([[1, 0], [0, 1]]).reshape(-1, 1) / 2,
+        equally_collapsed=np.array([[1, 0], [0, 1]]).reshape(-1, 1) / 2,
     )
-
-    components = np.hstack([R[m] for m in sorted(R.keys())])
+    R_keys = sorted(R.keys())
+    
+    # Return the least-squares solution.
+    components = np.hstack([R[m] for m in R_keys])
     x, residuals, rank, s = np.linalg.lstsq(components, Y, rcond=None)
-    print("Residuals:", residuals)
-    print("Coefficients:")
-    for k, f in enumerate(["u", "b"]):
-        print(f"\t{f} =", np.round(x[k][0], qi.DEC))
+    
+    assert len(residuals) > 0
+    
+    # Convex coefficients
+    x = {j:qi.trim_imaginary(x[i][0]) for i, j in enumerate(R_keys)}
 
-    return x, residuals
+    # Assemble all the elements of the linear equation.
+    E = {m: v.reshape(2, 2) for m, v in R.items()} | dict(final=Y.reshape(2,2))
 
+    reconstructed_final = np.sum([v*E[i] for i, v in x.items()], axis=0)    
 
-f, residuals = decompose("⅓⅓⅓⅓", 2, "bomb 1", "⅓")
+    if verbose:
+        print(f"Results of the least-squares fit for {config}:")
+        print("- Residuals:", residuals)
+        print("- Coefficients:")
+        for k in R_keys:
+            print(f"  - {k} =", np.round(x[k], ROUND))
+    
+        if not np.allclose(reconstructed_final, E['final'], qi.TOL):
+            print('Mismatch!')
+            print('Reconstructed:')
+            print(reconstructed_final)
+            print('Actual:')
+            print(E['final'])
+        else:
+            print('Matching!')
+
+    return (x, residuals, E, reconstructed_final)
+
+f, residuals, E, reconstructed_final = decompose(
+    '⅔⅔⅔0', 2, 'bomb 1', True)
