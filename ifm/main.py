@@ -23,6 +23,9 @@ bomb_dict = {
     "½": np.array([0, 1, 1]) / np.sqrt(2),
     "⅓": np.array([0, 1, np.sqrt(2)]) / np.sqrt(3),
     "⅔": np.array([0, np.sqrt(2), 1]) / np.sqrt(3),
+    "h": np.array([0, 1, 1j]) / np.sqrt(2),
+    "t": np.array([0, 1, 1j * np.sqrt(2)]) / np.sqrt(3),
+    "T": np.array([0, np.sqrt(2), 1j]) / np.sqrt(3),
 }
 
 
@@ -42,7 +45,7 @@ class IFM:
             - dimension 0 represents the exploded bomb,
             - dimension 1 represents the bomb in the photon's path, and
             - dimension 2 represents the bomb away from the photon's path.
-            There are `N` bombs.
+            There are `N` bombs and all of them are in pure states.
         gamma : np.ndarray or int, optional
             Quantum state of the incident photon. It can be specified
             explicitly in Hilbert space as as nd.ndarray or implicitly as an
@@ -74,17 +77,12 @@ class IFM:
             gamma_temp = np.zeros(len(bombs) + 1)
             gamma_temp[gamma] = 1
             gamma = gamma_temp
-        else:
-            # If the initial setup hasn't been recorded as a string, just set
-            # it to None.
-            self.setup = None
-
-        # Ensure the number of bombs is equal to the number of photon paths.
-        if validate:
+        elif isinstance(bombs, str) and isinstance(gamma, np.array):
+            self.setup = f"-›{bombs}"  # Record the initial setup
+            bombs = tuple(bomb_dict[b.upper()] for b in bombs)
             assert gamma.shape[0] == len(bombs) + 1
-        for bomb in bombs:
-            if validate:
-                assert isinstance(bomb, np.ndarray)
+        else:
+            self.setup = "-›-"
 
         self.validate = validate  # Validation flag
         self.tol = tol  # Numerical tolerance
@@ -108,6 +106,18 @@ class IFM:
         for k in range(self.modes - 1):
             self.bombs = np.kron(self.bombs, bombs[k + 1])
 
+        # Consrtuct the initial density matrix.
+        if len(self.gamma.shape) == 1:
+            input_state = np.kron(self.gamma, self.bombs)
+            self.rho = np.outer(input_state, input_state)
+        elif len(self.gamma.shape) == 2 and self.gamma.shape[1] > 1:
+            self.rho = np.kron(self.gamma, np.outer(self.bombs, self.bombs))
+        else:
+            assert False
+
+        if self.validate:
+            assert qi.is_density_matrix(self.rho)
+
     def __call__(self, interact=True, verbose=True):
         """
         Run the photon through the Mach-Zehnder interferometer.
@@ -124,13 +134,7 @@ class IFM:
         None.
         """
 
-        # Consrtuct the initial density matrix.
-        input_state = np.kron(self.gamma, self.bombs)
-        self.rho = np.outer(input_state, input_state)
-        if self.validate:
-            assert qi.is_density_matrix(self.rho)
-
-        # results
+        # Results
         self.results = {
             m: {
                 "measurement": None,  # Measurement operator
@@ -417,7 +421,7 @@ class IFM:
                 print(f"Skipping outcome {m} for setup `{self.setup}`")
 
 
-# %%
+# %% Extra functions
 
 
 def closed_form(g, b):
@@ -524,20 +528,81 @@ def check_reconstruction(
         print(reconstructed_disturbed)
 
 
+def decompose(config, outcome, bomb, verbose=False):
+    base = config[int(bomb.split(" ")[1]) - 1]
+
+    Y = qi.get_subrho(config, outcome, bomb, results, None)[1:, 1:].reshape(
+        -1, 1
+    )
+
+    # Convex components
+    R = dict(
+        undisturbed=np.outer(bomb_dict[base], bomb_dict[base])[1:, 1:].reshape(
+            -1, 1
+        ),
+        # c=np.array([[1,0], [0,0]]).reshape(-1, 1),
+        # r=np.array([[0,0], [0,1]]).reshape(-1, 1),
+        # m=np.array([[bomb_dict[base][1]**2,0], [0, bomb_dict[base][2]**2]]).reshape(-1, 1),
+        equally_collapsed=np.array([[1, 0], [0, 1]]).reshape(-1, 1) / 2,
+    )
+    R_keys = sorted(R.keys())
+
+    # Return the least-squares solution.
+    components = np.hstack([R[m] for m in R_keys])
+    x, residuals, rank, s = np.linalg.lstsq(components, Y, rcond=None)
+
+    assert len(residuals) > 0
+
+    # Convex coefficients
+    x = {j: qi.trim_imaginary(x[i][0]) for i, j in enumerate(R_keys)}
+
+    # Assemble all the elements of the linear equation.
+    E = {m: v.reshape(2, 2) for m, v in R.items()} | dict(
+        final=Y.reshape(2, 2)
+    )
+
+    reconstructed_final = np.sum([v * E[i] for i, v in x.items()], axis=0)
+
+    if verbose:
+        print(f"Results of the least-squares fit for {config}:")
+        print("- Residuals:", residuals)
+        print("- Coefficients:")
+        for k in R_keys:
+            print(f"  - {k} =", np.round(x[k], ROUND))
+
+        if not np.allclose(reconstructed_final, E["final"], qi.TOL):
+            print("Mismatch!")
+            print("Reconstructed:")
+            print(reconstructed_final)
+            print("Actual:")
+            print(E["final"])
+        else:
+            print("Matching!")
+
+    return (x, residuals, E, reconstructed_final)
+
+
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
     # my_system = {k: None for k in
-    #              ['⅔0',     '⅔00',  '⅔000',
-    #               '⅔⅔',     '⅔⅔0',  '⅔⅔00',
-    #               '⅔⅔⅔',    '⅔⅔⅔0', '⅔⅔⅔⅔',
-    #               '½0',     '½00',  '½000',
-    #               '½½',     '½½0',  '½½00',
-    #               '½½½', '½½½0', '½½½½',
-    #               '⅓0', '⅓00', '⅓000',
-    #               '⅓⅓', '⅓⅓0', '⅓⅓00',
-    #               '⅓⅓⅓', '⅓⅓⅓0', '⅓⅓⅓⅓'
+    #              ['⅔0',     '⅔00',  '⅔000', '⅔0000',
+    #               '⅔⅔',     '⅔⅔0',  '⅔⅔00', '⅔⅔000',
+    #               '⅔⅔⅔',    '⅔⅔⅔0', '⅔⅔⅔00',
+    #               '⅔⅔⅔⅔',   '⅔⅔⅔⅔0',
+    #               '⅔⅔⅔⅔⅔',
+    #               '½0',     '½00',  '½000', '½0000',
+    #               '½½',     '½½0',  '½½00', '½½000',
+    #               '½½½',    '½½½0', '½½½00',
+    #               '½½½½',   '½½½½0',
+    #               '½½½½½',
+    #               '⅓0',     '⅓00',  '⅓000', '⅓0000',
+    #               '⅓⅓',     '⅓⅓0',  '⅓⅓00', '⅓⅓000',
+    #               '⅓⅓⅓',    '⅓⅓⅓0', '⅓⅓⅓00',
+    #               '⅓⅓⅓⅓',   '⅓⅓⅓⅓0',
+    #               '⅓⅓⅓⅓⅓'
     #              ]}
-    my_system = "½000"  # ½⅓⅔
+    my_system = "½00"  # ½⅓⅔
+    # my_system = None
 
     if isinstance(my_system, dict):
         results = my_system.copy()
@@ -548,16 +613,16 @@ if __name__ == "__main__":
             my_system[k].report()
 
         df = qi.results_vs_N(results, outcome=2, subsystem="bomb 1")
-        print(df)
-        check_reconstruction(
-            results=results,
-            initial_bomb="⅓",
-            base_config="⅓⅓",
-            my_config="⅓⅓⅓⅓",
-            outcome=2,
-            bomb="bomb 1",
-            k=2,
-        )
+        # print(df)
+        # check_reconstruction(
+        #     results=results,
+        #     initial_bomb="⅓",
+        #     base_config="⅓⅓",
+        #     my_config="⅓⅓⅓⅓",
+        #     outcome=2,
+        #     bomb="bomb 1",
+        #     k=2,
+        # )
     elif isinstance(my_system, str):
         my_bombs = my_system
         my_system = IFM(my_system)
@@ -584,74 +649,10 @@ if __name__ == "__main__":
                     )
             print("Closed-form expression checked!")
 
-    # %% Closed form expression
-
-    # results_closed_form = closed_form(
-    #     np.array([0, 1, 1]) / np.sqrt(2), '⅔⅔')  # ½⅓⅔
-    # # A = results_closed_form[2]['subsystems']['bomb 1']
-    # # B = results_closed_form[2]['subsystems']['bomb 2']
-
-    # %% Reloaded results
-
-    import quantum_information as qi
-
-    results = qi.reload()
-    print(qi.get_subrho('½½00', 2, 'bomb 1', results))
-    df = qi.results_vs_N(results, outcome=2, subsystem='bomb 1')
-
-# %%
-
-
-def decompose(config, outcome, bomb, verbose=False):
-
-    base = config[int(bomb.split(' ')[1])-1]
-    
-
-    Y = qi.get_subrho(config, outcome, bomb, results, None)[1:, 1:].reshape(
-        -1, 1
-    )
-    
-    # Convex components
-    R = dict(
-        undisturbed=np.outer(bomb_dict[base], bomb_dict[base])[1:, 1:].reshape(-1, 1),
-        # c=np.array([[1,0], [0,0]]).reshape(-1, 1),
-        # r=np.array([[0,0], [0,1]]).reshape(-1, 1),
-        # m=np.array([[bomb_dict[base][1]**2,0], [0, bomb_dict[base][2]**2]]).reshape(-1, 1),
-        equally_collapsed=np.array([[1, 0], [0, 1]]).reshape(-1, 1) / 2,
-    )
-    R_keys = sorted(R.keys())
-    
-    # Return the least-squares solution.
-    components = np.hstack([R[m] for m in R_keys])
-    x, residuals, rank, s = np.linalg.lstsq(components, Y, rcond=None)
-    
-    assert len(residuals) > 0
-    
-    # Convex coefficients
-    x = {j:qi.trim_imaginary(x[i][0]) for i, j in enumerate(R_keys)}
-
-    # Assemble all the elements of the linear equation.
-    E = {m: v.reshape(2, 2) for m, v in R.items()} | dict(final=Y.reshape(2,2))
-
-    reconstructed_final = np.sum([v*E[i] for i, v in x.items()], axis=0)    
-
-    if verbose:
-        print(f"Results of the least-squares fit for {config}:")
-        print("- Residuals:", residuals)
-        print("- Coefficients:")
-        for k in R_keys:
-            print(f"  - {k} =", np.round(x[k], ROUND))
-    
-        if not np.allclose(reconstructed_final, E['final'], qi.TOL):
-            print('Mismatch!')
-            print('Reconstructed:')
-            print(reconstructed_final)
-            print('Actual:')
-            print(E['final'])
-        else:
-            print('Matching!')
-
-    return (x, residuals, E, reconstructed_final)
-
-f, residuals, E, reconstructed_final = decompose(
-    '⅔⅔⅔0', 2, 'bomb 1', True)
+    elif my_system is None:
+        results = qi.reload()
+        print(qi.get_subrho("½½00", 2, "bomb 1", results))
+        df = qi.results_vs_N(results, outcome=2, subsystem="bomb 1")
+        f, residuals, E, reconstructed_final = decompose(
+            "⅔⅔⅔0", 2, "bomb 1", True
+        )
