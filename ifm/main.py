@@ -601,8 +601,9 @@ if __name__ == "__main__":
     #               '⅓⅓⅓⅓',   '⅓⅓⅓⅓0',
     #               '⅓⅓⅓⅓⅓'
     #              ]}
-    my_system = "½00"  # ½⅓⅔
+    # my_system = "½00"  # ½⅓⅔
     # my_system = None
+    my_system = False
 
     if isinstance(my_system, dict):
         results = my_system.copy()
@@ -656,3 +657,44 @@ if __name__ == "__main__":
         f, residuals, E, reconstructed_final = decompose(
             "⅔⅔⅔0", 2, "bomb 1", True
         )
+
+    elif my_system is False:
+        print("Pass")
+
+# %%
+
+
+class System:
+    def __init__(self, g, b):
+        self.g = g
+        self.b = tuple(bomb_dict[bomb] for bomb in b)
+        self.N = len(self.b)
+        self.BS = qi.symmetric_BS(self.N, include_vacuum_mode=False)
+
+    def helper(self):
+        k = [bin(k)[2:] for k in range(2**self.N)]
+        k = ["0" * (self.N - len(j)) + j for j in k]
+        k = ["".join([str(int(l) + 1) for l in j]) for j in k]
+
+    def MZ2(self):
+        rho = {
+            x: {y: None for y in range(1, self.N + 1)}
+            for x in range(1, self.N + 1)
+        }
+        C = {x: 1 for x in range(1, self.N + 1)}
+
+        a = -1
+
+        # Outcome 1, bomb 1
+        rho[1][1] = 1
+
+        print(self.N)
+        print(k)
+        print(len(k))
+
+        return rho
+
+
+# S = System(np.array([0,1,1])/np.sqrt(2), '½½')
+S = System(np.array([0, 1, 1]) / np.sqrt(2), "½½½½")
+rho = S.MZ2()
