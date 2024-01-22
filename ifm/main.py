@@ -11,6 +11,7 @@ and away from the path.
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import quantum_information as qi
 import seaborn as sns
 
@@ -602,8 +603,8 @@ if __name__ == "__main__":
     #               '⅓⅓⅓⅓⅓'
     #              ]}
     # my_system = "½00"  # ½⅓⅔
-    # my_system = None
-    my_system = False
+    my_system = None
+    # my_system = False
 
     if isinstance(my_system, dict):
         results = my_system.copy()
@@ -665,36 +666,81 @@ if __name__ == "__main__":
 
 
 class System:
-    def __init__(self, g, b):
-        self.g = g
+    def __init__(self, b, g=None):
         self.b = tuple(bomb_dict[bomb] for bomb in b)
         self.N = len(self.b)
-        self.BS = qi.symmetric_BS(self.N, include_vacuum_mode=False)
 
-    def helper(self):
-        k = [bin(k)[2:] for k in range(2**self.N)]
-        k = ["0" * (self.N - len(j)) + j for j in k]
-        k = ["".join([str(int(l) + 1) for l in j]) for j in k]
+        # If unspecified, assume the photon is in a uniform coherent
+        # superposition over all modes.
+        if g is None:
+            self.g = np.array([0] + [1] * self.N) / np.sqrt(self.N)
+
+        self.BS = qi.symmetric_BS(self.N, include_vacuum_mode=True)
+
+    def compute_coeffs(self):
+        """
+        Compute the coefficients of the basis states when there is no
+        explostion.
+        """
+
+        self.coeffs = pd.DataFrame(index=list(range(2**self.N)))
+
+        # Convert to binary representation.
+        self.coeffs["z"] = self.coeffs.index.map(lambda x: bin(x)[2:])
+
+        # Pad with zeros and add one to each "bit" so, e.g., 01 becomes 12,
+        # namely a photon on the first path and no photon on the second path.
+        self.coeffs["z"] = self.coeffs["z"].apply(
+            lambda x: "".join(
+                [str(int(y) + 1) for y in list("0" * (self.N - len(x)) + x)]
+            )
+        )
+        self.coeffs.set_index("z", inplace=True)
+
+        # Compute the coefficient for each photon outcome.
+        for n in range(1, self.N + 1):
+            self.coeffs[n] = self.coeffs.index
+            self.coeffs[n] = self.coeffs[n].apply(
+                lambda z: self.compute_coeff(n, z)
+            )
+
+        self.P = self.coeffs.apply(
+            lambda y: qi.trim_imaginary(np.conj(y) @ y, qi.TOL), axis=0
+        )
+
+        return self.coeffs / self.P
+
+    def compute_coeff(self, n, z):
+        Z = np.prod([self.b[m][int(x)] for m, x in enumerate(z)])
+        Z *= np.multiply(self.BS[1:, n], self.g[1:]) @ np.array(
+            [j == "2" for j in z]
+        )
+
+        return Z
 
     def MZ2(self):
         rho = {
             x: {y: None for y in range(1, self.N + 1)}
             for x in range(1, self.N + 1)
         }
-        C = {x: 1 for x in range(1, self.N + 1)}
 
         a = -1
 
         # Outcome 1, bomb 1
         rho[1][1] = 1
 
-        print(self.N)
-        print(k)
-        print(len(k))
+        Z_df = self.compute_coeffs()
 
-        return rho
+        return rho, Z_df
 
 
-# S = System(np.array([0,1,1])/np.sqrt(2), '½½')
-S = System(np.array([0, 1, 1]) / np.sqrt(2), "½½½½")
-rho = S.MZ2()
+S = System("½½0")
+rho, Z_df = S.MZ2()
+print(Z_df)
+
+# %%
+
+A = Z_df.index.to_list()
+N = len(Z_df.index[0])
+for k in range(1, 2 ** (N - 1)):
+    print(k, A[k], "->", A[k + 2 ** (N - 1)])
