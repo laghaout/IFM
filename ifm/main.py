@@ -718,29 +718,57 @@ class System:
 
         return Z
 
-    def MZ2(self):
-        rho = {
-            x: {y: None for y in range(1, self.N + 1)}
-            for x in range(1, self.N + 1)
-        }
-
-        a = -1
-
-        # Outcome 1, bomb 1
-        rho[1][1] = 1
-
-        Z_df = self.compute_coeffs()
-
-        return rho, Z_df
-
-
-S = System("½½0")
-rho, Z_df = S.MZ2()
-print(Z_df)
 
 # %%
 
+config = "⅔⅔0"
+curr_bomb = 1
+outcome = 2
+
+S = System(config)
+Z_df = S.compute_coeffs()
+
 A = Z_df.index.to_list()
 N = len(Z_df.index[0])
-for k in range(1, 2 ** (N - 1)):
-    print(k, A[k], "->", A[k + 2 ** (N - 1)])
+rho_bomb = {j: np.zeros((2, 2), dtype=complex) for j in range(1, S.N + 1)}
+for j in range(S.N):
+    # Start-end pairs
+    # bomb = [(A[k], A[k + 2 ** (N - 1)],) for k in range(1, 2 ** (N - 1))]
+    bomb = [
+        (
+            Z_df.loc[A[k]][outcome],
+            Z_df.loc[A[k + 2 ** (N - 1)]][outcome],
+        )
+        for k in range(1, 2 ** (N - 1))
+    ]
+    # Alone term
+    # bomb += [A[2 ** (N - 1)]]
+    bomb += [Z_df.loc[A[2 ** (N - 1)]][outcome]]
+
+    # Move one "bit" to the right for the next bomb
+    A = [a[-1] + a[:-1] for a in A]
+    rho_bomb[j + 1][0, 0] = np.sum(
+        [bomb[m][0] * np.conj(bomb[m][0]) for m in range(len(bomb) - 1)]
+    )
+    rho_bomb[j + 1][0, 1] = np.sum(
+        [bomb[m][0] * np.conj(bomb[m][1]) for m in range(len(bomb) - 1)]
+    )
+    rho_bomb[j + 1][1, 0] = np.sum(
+        [bomb[m][1] * np.conj(bomb[m][0]) for m in range(len(bomb) - 1)]
+    )
+    rho_bomb[j + 1][1, 1] = np.sum(
+        [bomb[m][1] * np.conj(bomb[m][1]) for m in range(len(bomb) - 1)]
+        + [bomb[len(bomb) - 1] * np.conj(bomb[len(bomb) - 1])]
+    )
+    rho_bomb[j + 1] *= S.P[outcome]
+    rho_bomb[j + 1] = qi.trim_imaginary(rho_bomb[j + 1], qi.TOL)
+
+print(rho_bomb[curr_bomb])
+print(qi.get_subrho(config, outcome, f"bomb {curr_bomb}", results)[1:, 1:])
+
+print(
+    np.allclose(
+        qi.get_subrho(config, outcome, f"bomb {curr_bomb}", results)[1:, 1:],
+        rho_bomb[curr_bomb],
+    )
+)
