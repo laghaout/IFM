@@ -721,54 +721,78 @@ class System:
 
 # %%
 
-config = "⅔⅔0"
-curr_bomb = 1
-outcome = 2
 
-S = System(config)
-Z_df = S.compute_coeffs()
+def foo(config):
+    S = System(config)
 
-A = Z_df.index.to_list()
-N = len(Z_df.index[0])
-rho_bomb = {j: np.zeros((2, 2), dtype=complex) for j in range(1, S.N + 1)}
-for j in range(S.N):
-    # Start-end pairs
-    # bomb = [(A[k], A[k + 2 ** (N - 1)],) for k in range(1, 2 ** (N - 1))]
-    bomb = [
-        (
-            Z_df.loc[A[k]][outcome],
-            Z_df.loc[A[k + 2 ** (N - 1)]][outcome],
-        )
-        for k in range(1, 2 ** (N - 1))
-    ]
-    # Alone term
-    # bomb += [A[2 ** (N - 1)]]
-    bomb += [Z_df.loc[A[2 ** (N - 1)]][outcome]]
+    # Compute the coefficients of the kets for the different outcomes.
+    coeffs = S.compute_coeffs()
 
-    # Move one "bit" to the right for the next bomb
-    A = [a[-1] + a[:-1] for a in A]
-    rho_bomb[j + 1][0, 0] = np.sum(
-        [bomb[m][0] * np.conj(bomb[m][0]) for m in range(len(bomb) - 1)]
-    )
-    rho_bomb[j + 1][0, 1] = np.sum(
-        [bomb[m][0] * np.conj(bomb[m][1]) for m in range(len(bomb) - 1)]
-    )
-    rho_bomb[j + 1][1, 0] = np.sum(
-        [bomb[m][1] * np.conj(bomb[m][0]) for m in range(len(bomb) - 1)]
-    )
-    rho_bomb[j + 1][1, 1] = np.sum(
-        [bomb[m][1] * np.conj(bomb[m][1]) for m in range(len(bomb) - 1)]
-        + [bomb[len(bomb) - 1] * np.conj(bomb[len(bomb) - 1])]
-    )
-    rho_bomb[j + 1] *= S.P[outcome]
-    rho_bomb[j + 1] = qi.trim_imaginary(rho_bomb[j + 1], qi.TOL)
+    # Infer the number of paths.
+    N = len(coeffs.index[0])
 
-print(rho_bomb[curr_bomb])
-print(qi.get_subrho(config, outcome, f"bomb {curr_bomb}", results)[1:, 1:])
+    # Post-measurement states of the bombs keyed by outcome (i.e., photon
+    # position) and by bomb index (i.e., path location).
+    rho_bomb = {
+        o: {b: np.zeros((2, 2), dtype=complex) for b in range(1, S.N + 1)}
+        for o in range(1, S.N + 1)
+    }
 
-print(
-    np.allclose(
-        qi.get_subrho(config, outcome, f"bomb {curr_bomb}", results)[1:, 1:],
-        rho_bomb[curr_bomb],
-    )
-)
+    # For each outcome...
+    for outcome in range(1, S.N + 1):
+        ket_coeffs = coeffs.index.to_list()
+
+        # For each bomb...
+        for j in range(S.N):
+            # Compute the start-end pairs for the current outcome. See the
+            # manuscript for full details.
+            bomb = [
+                (
+                    # Start coefficient
+                    coeffs.loc[ket_coeffs[k]][outcome],
+                    # End coefficient
+                    coeffs.loc[ket_coeffs[k + 2 ** (N - 1)]][outcome],
+                )
+                for k in range(1, 2 ** (N - 1))
+            ]
+            # Alone term.
+            bomb += [coeffs.loc[ket_coeffs[2 ** (N - 1)]][outcome]]
+
+            rho_bomb[outcome][j + 1][0, 0] = np.sum(
+                [
+                    bomb[m][0] * np.conj(bomb[m][0])
+                    for m in range(len(bomb) - 1)
+                ]
+            )
+            rho_bomb[outcome][j + 1][0, 1] = np.sum(
+                [
+                    bomb[m][0] * np.conj(bomb[m][1])
+                    for m in range(len(bomb) - 1)
+                ]
+            )
+            rho_bomb[outcome][j + 1][1, 0] = np.sum(
+                [
+                    bomb[m][1] * np.conj(bomb[m][0])
+                    for m in range(len(bomb) - 1)
+                ]
+            )
+            rho_bomb[outcome][j + 1][1, 1] = np.sum(
+                [
+                    bomb[m][1] * np.conj(bomb[m][1])
+                    for m in range(len(bomb) - 1)
+                ]
+                + [bomb[len(bomb) - 1] * np.conj(bomb[len(bomb) - 1])]
+            )
+            rho_bomb[outcome][j + 1] *= S.P[outcome]
+            rho_bomb[outcome][j + 1] = qi.trim_imaginary(
+                rho_bomb[outcome][j + 1], qi.TOL
+            )
+
+            # Move one "bit" to the right for the next bomb
+            ket_coeffs = [a[-1] + a[:-1] for a in ket_coeffs]
+
+    return S, rho_bomb
+
+
+S, rho_bomb = foo("½0⅓1⅔h")
+print(S.P)
