@@ -667,20 +667,91 @@ if __name__ == "__main__":
 
 class System:
     def __init__(self, b, g=None):
-        self.b = tuple(bomb_dict[bomb] for bomb in b)
+        # Tuple of bomb states
+        if isinstance(b, str):
+            self.b = tuple(bomb_dict[bomb] for bomb in b)
+
+        # Number of paths
         self.N = len(self.b)
 
-        # If unspecified, assume the photon is in a uniform coherent
+        # If unspecified, assume that the photon is in a uniform coherent
         # superposition over all modes.
         if g is None:
             self.g = np.array([0] + [1] * self.N) / np.sqrt(self.N)
+        else:
+            assert isinstance(self.g, np.ndarray)
+            self.g = g
 
+        # Beam splitter
         self.BS = qi.symmetric_BS(self.N, include_vacuum_mode=True)
+
+    def __call__(self):
+        # Coefficients of the basis vectors just before the measurement
+        self.compute_coeffs()
+
+        # Initialization of the post-measurement states of the bombs keyed by
+        # outcome (i.e., photon click position) and by bomb index (i.e., path
+        # location).
+        rho_bomb = {
+            o: {b: np.zeros((2, 2), dtype=complex) for b in range(1, S.N + 1)}
+            for o in range(1, S.N + 1)
+        }
+
+        # For each outcome...
+        for outcome in range(1, self.N + 1):
+            # Retrieve the basis states (ket vectors).
+            kets = self.coeffs.index.to_list()
+
+            # For each bomb...
+            for b in range(self.N):
+                # Compute the start-end pairs for the current outcome. See the
+                # manuscript for full details.
+                bomb = [
+                    (
+                        # Start coefficient
+                        self.coeffs.loc[kets[k]][outcome],
+                        # End coefficient
+                        self.coeffs.loc[kets[k + 2 ** (self.N - 1)]][outcome],
+                    )
+                    for k in range(1, 2 ** (self.N - 1))
+                ]
+                # Lone term
+                bomb += [self.coeffs.loc[kets[2 ** (self.N - 1)]][outcome]]
+
+                # Compute the 2×2 density matrix of the unexploded bomb. Note
+                # that this would have been 3×3 if we kept the 0th explosion
+                # basis ket, but since the photon reached the detector and
+                # therefore bomb remains unexploded, that 0th dimension can be
+                # ignored.
+                for n, m in [(0, 0), (0, 1), (1, 0), (1, 1)]:
+                    # Coefficient of ∣n⟩⟨m∣
+                    rho_bomb[outcome][b + 1][n, m] = np.sum(
+                        [
+                            bomb[k][n] * np.conj(bomb[k][m])
+                            for k in range(len(bomb) - 1)
+                        ]
+                    )
+
+                # Add the lone term to ∣1⟩⟨1∣.
+                rho_bomb[outcome][b + 1][n, m] += bomb[
+                    len(bomb) - 1
+                ] * np.conj(bomb[len(bomb) - 1])
+
+                rho_bomb[outcome][b + 1] *= S.P[outcome]
+                rho_bomb[outcome][b + 1] = qi.trim_imaginary(
+                    rho_bomb[outcome][b + 1], qi.TOL
+                )
+
+                # Move one "bit" to the right for the next bomb. Cf. the
+                # manuscript for the full details.
+                kets = [a[-1] + a[:-1] for a in kets]
+
+        return rho_bomb
 
     def compute_coeffs(self):
         """
         Compute the coefficients of the basis states when there is no
-        explostion.
+        explosion.
         """
 
         self.coeffs = pd.DataFrame(index=list(range(2**self.N)))
@@ -708,7 +779,8 @@ class System:
             lambda y: qi.trim_imaginary(np.conj(y) @ y, qi.TOL), axis=0
         )
 
-        return self.coeffs / self.P
+        # Normalize
+        self.coeffs /= self.P
 
     def compute_coeff(self, n, z):
         Z = np.prod([self.b[m][int(x)] for m, x in enumerate(z)])
@@ -719,80 +791,47 @@ class System:
         return Z
 
 
+S = System("½0⅓⅔h")
+rho_bomb = S()
+print(S.P)
+
 # %%
 
 
-def foo(config):
-    S = System(config)
+def check_with_numerical(results):
+    mismatch = False
 
-    # Compute the coefficients of the kets for the different outcomes.
-    coeffs = S.compute_coeffs()
+    # For each configuration...
+    for config in results.keys():
+        # For each outcome
+        for o in range(1, len(config) + 1):
+            # For each bomb...
+            for b in range(1, len(config) + 1):
+                S = System(config)
+                rho_bomb = S()
+                if not np.allclose(
+                    rho_bomb[o][b],
+                    qi.get_subrho(config, o, f"bomb {b}", results)[1:, 1:],
+                ):
+                    print(
+                        f"Mismatch for {config} with outcome {o} and bomb {b}."
+                    )
+                    mismatch = True
+                    break
 
-    # Infer the number of paths.
-    N = len(coeffs.index[0])
-
-    # Post-measurement states of the bombs keyed by outcome (i.e., photon
-    # position) and by bomb index (i.e., path location).
-    rho_bomb = {
-        o: {b: np.zeros((2, 2), dtype=complex) for b in range(1, S.N + 1)}
-        for o in range(1, S.N + 1)
-    }
-
-    # For each outcome...
-    for outcome in range(1, S.N + 1):
-        ket_coeffs = coeffs.index.to_list()
-
-        # For each bomb...
-        for j in range(S.N):
-            # Compute the start-end pairs for the current outcome. See the
-            # manuscript for full details.
-            bomb = [
-                (
-                    # Start coefficient
-                    coeffs.loc[ket_coeffs[k]][outcome],
-                    # End coefficient
-                    coeffs.loc[ket_coeffs[k + 2 ** (N - 1)]][outcome],
-                )
-                for k in range(1, 2 ** (N - 1))
-            ]
-            # Alone term.
-            bomb += [coeffs.loc[ket_coeffs[2 ** (N - 1)]][outcome]]
-
-            rho_bomb[outcome][j + 1][0, 0] = np.sum(
-                [
-                    bomb[m][0] * np.conj(bomb[m][0])
-                    for m in range(len(bomb) - 1)
-                ]
-            )
-            rho_bomb[outcome][j + 1][0, 1] = np.sum(
-                [
-                    bomb[m][0] * np.conj(bomb[m][1])
-                    for m in range(len(bomb) - 1)
-                ]
-            )
-            rho_bomb[outcome][j + 1][1, 0] = np.sum(
-                [
-                    bomb[m][1] * np.conj(bomb[m][0])
-                    for m in range(len(bomb) - 1)
-                ]
-            )
-            rho_bomb[outcome][j + 1][1, 1] = np.sum(
-                [
-                    bomb[m][1] * np.conj(bomb[m][1])
-                    for m in range(len(bomb) - 1)
-                ]
-                + [bomb[len(bomb) - 1] * np.conj(bomb[len(bomb) - 1])]
-            )
-            rho_bomb[outcome][j + 1] *= S.P[outcome]
-            rho_bomb[outcome][j + 1] = qi.trim_imaginary(
-                rho_bomb[outcome][j + 1], qi.TOL
-            )
-
-            # Move one "bit" to the right for the next bomb
-            ket_coeffs = [a[-1] + a[:-1] for a in ket_coeffs]
-
-    return S, rho_bomb
+            if mismatch:
+                break
+        if mismatch:
+            break
+    if mismatch:
+        print("Closed-form:")
+        print(rho_bomb[o][b])
+        print("Numerical:")
+        print(qi.get_subrho(config, o, f"bomb {b}", results)[1:, 1:])
+        print(
+            qi.get_subrho(config, o, f"bomb {b}", results)[1:, 1:]
+            / rho_bomb[o][b]
+        )
 
 
-S, rho_bomb = foo("½0⅓1⅔h")
-print(S.P)
+check_with_numerical(results)
