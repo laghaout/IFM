@@ -20,10 +20,13 @@ RUN pip3 install numpy==1.23.5
 RUN pip3 install pandas==1.5.2
 RUN pip3 install pytest
 RUN pip3 install py-cpuinfo
-#RUN pip3 install sequana --upgrade
 RUN pip3 install dcor==0.6
 RUN pip3 install pre-commit
 RUN pip3 install poetry
+RUN pip3 install qutip
+RUN pip3 install qtpy
+RUN pip3 install PyQt5
+RUN pip3 install spyder
 
 # Temporarily downgrade `protobuf` to avoid <https://stackoverflow.com/questions/72441758/typeerror-descriptors-cannot-not-be-created-directly>
 RUN pip3 install protobuf==3.20.*
@@ -32,4 +35,4 @@ RUN pip3 install protobuf==3.20.*
 COPY . .
 
 # Sets up the entry point to invoke the trainer.
-ENTRYPOINT ["python3", "ifm/main.py"]
+ENTRYPOINT ["python3", "IFM/main.py"]
