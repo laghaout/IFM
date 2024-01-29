@@ -11,6 +11,7 @@ import numpy as np
 import os
 import pandas as pd
 import pickle
+import qutip as qt
 
 # Numerical tolerance
 DEC = 13
@@ -393,3 +394,28 @@ def reconstruct_disturbed(N, final, undisturbed, k=2):
     rho_k = (C * final + (N - 1 - C) * undisturbed) / (N - 1)
 
     return np.round(rho_k, DEC)
+
+
+def plot_Wigner(bombs, system, ROUND=4):
+    xvec = np.linspace(-5, 5, 200)
+    # rho_coherent = qt.coherent_dm(N, np.sqrt(2))
+    for o in bombs.keys():
+        rho_bombs = {b: qt.Qobj(bombs[o][b]) for b in bombs[o].keys()}
+
+        wigner_bombs = {
+            b: qt.wigner(rho_bombs[b], xvec, xvec) for b in bombs[o].keys()
+        }
+
+        # Plot the results
+        fig, axes = plt.subplots(1, system.N, figsize=(4 * system.N, system.N))
+        cont = [None] * system.N
+        lbl = [None] * system.N
+        for b in range(1, system.N + 1):
+            cont[b - 1] = axes[b - 1].contourf(
+                xvec, xvec, wigner_bombs[b], 100
+            )
+            lbl[b - 1] = axes[b - 1].set_title(
+                f"outcome {o} bomb {b} purity {np.round(purity(bombs[o][b]), ROUND)}"
+            )
+
+        plt.show()

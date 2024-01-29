@@ -9,12 +9,9 @@ interferometers where the bombs can be in a superposition of being on a path
 and away from the path.
 """
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import quantum_information as qi
-import qutip as qt
-import seaborn as sns
 
 ROUND = 4
 
@@ -178,7 +175,7 @@ if __name__ == "__main__":
 # %%
 
 
-def foo(config):
+def decompose_bombs(config):
     combis = [
         ("ABC", "111", 1, 1),
         ("AB", "110", -1, 2 / 3),
@@ -189,44 +186,65 @@ def foo(config):
         ("C", "001", 1, 1 / 3),
     ]
     epsilon = 0
-    rho = dict()
+    N = 3
+    rho = {
+        c[0]: {o: {b: None for b in range(1, N + 1)} for o in range(1, N + 1)}
+        for c in combis
+    }
 
     for c in combis:
         system = System(config, "0" + c[1])
         system()
         # c[3] is the prior of a photon click
         epsilon += c[2] * system.P * c[3]
-        rho[c[0]] = qi.trim_imaginary(system.bombs[2][1])
+        rho[c[0]] = system.bombs
 
     print(f"{config}:\nepsilon =\n{np.round(epsilon, ROUND)}")
 
     return rho
 
 
-rho = foo("½½½")  # ⅓t½
+def decomposed_bomb(rho, outcome, bomb):
+    return {k: rho[k][outcome][bomb] for k in rho.keys()}
+
+
+rho = decompose_bombs("⅓t½")  # ⅓t½
 # TODO: Check linear combination leading to rho for ABC
 
+# %%
 
-def plot_Wigner(bombs=bombs):
-    xvec = np.linspace(-5, 5, 200)
-    # rho_coherent = qt.coherent_dm(N, np.sqrt(2))
-    for o in bombs.keys():
-        rho_bombs = {b: qt.Qobj(bombs[o][b]) for b in bombs[o].keys()}
 
-        wigner_bombs = {
-            b: qt.wigner(rho_bombs[b], xvec, xvec) for b in bombs[o].keys()
-        }
+def linComb(rho, outcome, bomb):
+    rho = decomposed_bomb(rho, outcome, bomb)
+    rho_all = rho.pop("ABC")
+    # TODO: Try differnt combinations
+    # [rho.pop(x) for x in ['A', 'B', 'C']]
+    rho.pop("A")
+    rho.pop("B")
+    # rho.pop('C')
+    vectors = {k: v.reshape(-1, 1) for k, v in rho.items()}
 
-        # Plot the results
-        fig, axes = plt.subplots(1, system.N, figsize=(4 * system.N, system.N))
-        cont = [None] * system.N
-        lbl = [None] * system.N
-        for b in range(1, system.N + 1):
-            cont[b - 1] = axes[b - 1].contourf(
-                xvec, xvec, wigner_bombs[b], 100
-            )
-            lbl[b - 1] = axes[b - 1].set_title(
-                f"outcome {o} bomb {b} purity {np.round(qi.purity(bombs[o][b]), ROUND)}"
-            )
+    # Stack the vectors horizontally
+    vectors_keys = sorted(vectors.keys())
 
-        plt.show()
+    # Return the least-squares solution.
+    matrix = np.hstack([vectors[k] for k in vectors_keys])
+
+    x, residuals, rank, s = np.linalg.lstsq(
+        matrix, rho_all.reshape(-1, 1), rcond=None
+    )
+
+    print("residuals", residuals)
+
+    x = {j: qi.trim_imaginary(x[i][0]) for i, j in enumerate(vectors_keys)}
+
+    return x, residuals
+
+
+for o in range(1, 4):
+    for b in range(1, 4):
+        print(o, b)
+        x, residuals = linComb(rho, o, b)
+        print(residuals)
+        print(x)
+        print()
