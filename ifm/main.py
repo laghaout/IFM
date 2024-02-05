@@ -15,7 +15,7 @@ import quantum_information as qi
 
 ROUND = 4  # Number of decimal points to display when rounding
 
-# Short hand for representing the quantum states of the bombs
+# Short hand for representing the quantum states of the bombs as characters
 bomb_dict = {
     "0": np.array([0, 0, 1]),
     "1": np.array([0, 1, 0]),
@@ -60,15 +60,16 @@ class System:
         self.BS = qi.symmetric_BS(self.N, include_vacuum_mode=True)
 
     def __call__(self):
-        # Coefficients of the basis vectors just before the measurement
+        # Post-photon-measurement state
         self.compute_coeffs()
 
-        # Initialization of the post-measurement states of the bombs keyed by
-        # outcome (i.e., photon click position) and by bomb index (i.e., path
-        # location).
+        # Initialization of the post-photon-measurement states of the bombs
+        # keyed by outcome (i.e., photon click position) and by bomb index
+        # (i.e., path location).
         bombs = {
-            outcome: {
-                bomb: np.nan * np.ones((2, 2), dtype=complex)
+            outcome: {  # Outcome
+                bomb: np.nan  # Bomb index (path location)
+                * np.ones((2, 2), dtype=complex)
                 for bomb in range(1, self.N + 1)
             }
             for outcome in range(1, self.N + 1)
@@ -76,13 +77,13 @@ class System:
 
         # For each outcome...
         for outcome in range(1, self.N + 1):
-            # retrieve the basis states (ket vectors).
+            # retrieve the post-measurement state (ket vectors).
             kets = self.coeffs.index.to_list()
 
             # For each bomb...
             for b in range(self.N):
-                # compute the start-end pairs for the current outcome. See the
-                # manuscript for full details.
+                # compute the (start, end) pairs for the current outcome. See
+                # the manuscript for full details.
                 bomb = [
                     (
                         # Start coefficient
@@ -97,9 +98,9 @@ class System:
 
                 # Compute the 2×2 density matrix of the unexploded bomb. Note
                 # that this would have been 3×3 if we kept the 0th, "explosion"
-                # basis ket. However, since the photon reached the detector,
-                # the bomb remains unexploded, and that 0th dimension can thus
-                # be ignored.
+                # basis ket. However, since the photon reached the detector and
+                # the bomb remained unexploded, that 0th dimension can thus be
+                # ignored.
                 for n, m in [(0, 0), (0, 1), (1, 0), (1, 1)]:
                     # Coefficient of ∣n⟩⟨m∣
                     bombs[outcome][b + 1][n, m] = np.sum(
@@ -169,55 +170,52 @@ class System:
         # Normalize.
         self.coeffs /= np.sqrt(self.P)
 
+    @staticmethod
+    def decompose_bombs(bomb_config, N=3):
+        # TODO: Generalize to N modes
+
+        combis = [
+            # (component, photon state, sign, probability adjustment)
+            ("123", "111", 1, 1),
+            ("12", "110", -1, 2 / 3),
+            ("13", "101", -1, 2 / 3),
+            ("23", "011", -1, 2 / 3),
+            ("1", "100", 1, 1 / 3),
+            ("2", "010", 1, 1 / 3),
+            ("3", "001", 1, 1 / 3),
+        ]
+        epsilon = 0
+
+        rho = {c[0]: None for c in combis}
+
+        for c in combis:
+            system = System(bomb_config, "0" + c[1])
+            system()
+            # c[3] is the prior of a photon click
+            epsilon += c[2] * system.P * c[3]
+            rho[c[0]] = system.bombs
+
+        print(f"{bomb_config}:\nepsilon =\n{np.round(epsilon, ROUND)}")
+
+        return rho
+
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
-    my_config = "⅓t½"
-    system = System(my_config, "0" + "1" * len(my_config))
+    bomb_config = "⅓t½"
+    system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
-    bombs = system.bombs
     print(np.round(system.P, ROUND))
+    rho = system.decompose_bombs(bomb_config)  # ⅓t½ ⅓1½
 
     # TODO: Double-check manually and with the old numerical results.
-
-# %%
-
-
-# TODO: Generalize to N modes
-def decompose_bombs(config):
-    combis = [
-        ("123", "111", 1, 1),
-        ("12", "110", -1, 2 / 3),
-        ("13", "101", -1, 2 / 3),
-        ("23", "011", -1, 2 / 3),
-        ("1", "100", 1, 1 / 3),
-        ("2", "010", 1, 1 / 3),
-        ("3", "001", 1, 1 / 3),
-    ]
-    epsilon = 0
-    N = 3
-    rho = {
-        c[0]: {o: {b: None for b in range(1, N + 1)} for o in range(1, N + 1)}
-        for c in combis
-    }
-
-    for c in combis:
-        system = System(config, "0" + c[1])
-        system()
-        # c[3] is the prior of a photon click
-        epsilon += c[2] * system.P * c[3]
-        rho[c[0]] = system.bombs
-
-    print(f"{config}:\nepsilon =\n{np.round(epsilon, ROUND)}")
-
-    return rho
 
 
 def linComb(rho, outcome, bomb, N=3):
     rho = {k: rho[k][outcome][bomb] for k in rho.keys()}
     rho_all = rho.pop("".join([str(j) for j in range(1, N + 1)]))
     # TODO: Try differnt combinations
-    [rho.pop(str(x)) for x in list(range(1, N + 1))]
+    # [rho.pop(str(x)) for x in list(range(1, N + 1))]
     vectors = {k: v.reshape(-1, 1) for k, v in rho.items()}
 
     # Stack the vectors horizontally
@@ -243,24 +241,57 @@ def linComb(rho, outcome, bomb, N=3):
     return x, residuals
 
 
-rho = decompose_bombs(my_config)  # ⅓t½ ⅓1½
-
 # TODO: Check linear combination leading to rho for ABC
 
-df = pd.MultiIndex.from_product(
-    [range(1, 4), range(1, 4)], names=["outcome", "bomb"]
-).to_frame()
+# df = pd.MultiIndex.from_product(
+#     [range(1, 4), range(1, 4)], names=["outcome", "bomb"]
+# ).to_frame()
 
-for o in range(1, 4):
-    for b in range(1, 4):
-        print("outcome", o, b)
-        x, residuals = linComb(rho, o, b)
-        print(residuals)
-        print(x)
-        print()
-        # df.loc[o, b]['residuals'] = residuals
-        reconstr_bomb = sum([x[j] * rho[j][o][b] for j in x.keys()])
-        allclose = np.allclose(bombs[o][b], reconstr_bomb)
+# for o in range(1, 4):
+#     for b in range(1, 4):
+#         print("outcome", o, b)
+#         x, residuals = linComb(rho, o, b)
+#         print(residuals)
+#         print(x)
+#         print()
+#         # df.loc[o, b]['residuals'] = residuals
+#         reconstr_bomb = sum([x[j] * rho[j][o][b] for j in x.keys()])
+#         allclose = np.allclose(system.bombs[o][b], reconstr_bomb)
 
+
+# %%
+
+
+def jaja(N):
+    from itertools import combinations
+
+    # Define your set S
+    S = [str(s) for s in range(1, N + 1)]
+    k = 2  # Change k to the desired number of elements in each combination
+
+    # Generate n-choose-k combinations
+    comb = combinations(S, k)
+
+    # Convert iterator to a list and print
+    comb_list = S + ["".join(sorted(c)) for c in comb]
+    return comb_list
+
+
+def foo(N):
+    mydict = {f"P{k}": 0 for k in jaja(N)}
+
+    for n in range(1, N + 1):
+        print(f"P{n}")
+        mydict[f"P{n}"] += 1
+        for m in range(1, n):
+            print(f"P{m}{n}-P{n}-P{m}")
+            mydict[f"P{m}{n}"] += 1
+            mydict[f"P{n}"] -= 1
+            mydict[f"P{m}"] -= 1
+
+    return mydict
+
+
+mydict = foo(7)
 
 # %%
