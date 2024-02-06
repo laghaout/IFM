@@ -13,6 +13,8 @@ import numpy as np
 import pandas as pd
 import quantum_information as qi
 
+from itertools import combinations
+
 ROUND = 4  # Number of decimal points to display when rounding
 
 # Short hand for representing the quantum states of the bombs as characters
@@ -170,43 +172,92 @@ class System:
         # Normalize.
         self.coeffs /= np.sqrt(self.P)
 
-    @staticmethod
-    def decompose_bombs(bomb_config, N=3):
+    def decompose_bombs(self, bomb_config):
         # TODO: Generalize to N modes
 
-        combis = [
-            # (component, photon state, sign, probability adjustment)
-            ("123", "111", 1, 1),
-            ("12", "110", -1, 2 / 3),
-            ("13", "101", -1, 2 / 3),
-            ("23", "011", -1, 2 / 3),
-            ("1", "100", 1, 1 / 3),
-            ("2", "010", 1, 1 / 3),
-            ("3", "001", 1, 1 / 3),
-        ]
+        combis = self.Born_decomposition(len(bomb_config))
         epsilon = 0
 
-        rho = {c[0]: None for c in combis}
+        rho = {c: None for c in combis.index}
 
-        for c in combis:
-            system = System(bomb_config, "0" + c[1])
+        for c in combis.index:
+            system = System(bomb_config, "0" + combis.at[c, "name"])
             system()
             # c[3] is the prior of a photon click
-            epsilon += c[2] * system.P * c[3]
-            rho[c[0]] = system.bombs
+            epsilon += (
+                combis.at[c, "weight"] * system.P * combis.at[c, "prior"]
+            )
+            rho[c] = system.bombs
 
         print(f"{bomb_config}:\nepsilon =\n{np.round(epsilon, ROUND)}")
 
+        self.combis = combis
+
         return rho
+
+    @staticmethod
+    def Born_decomposition(N, k=2):
+        """
+        Decompose the modes as per Born's rule.
+
+        Parameters
+        ----------
+        N : int
+            Number of modes
+        k : cardinality of the decomposition, optional
+            This is by default for Born's rule
+
+        Returns
+        -------
+        df : pandas.DataFrame
+            Decomposition of the paths
+
+        """
+
+        # List all the possible paths.
+        S = [str(s) for s in range(1, N + 1)]
+
+        # Generate n-choose-k combinations
+        comb = combinations(S, k)
+
+        # Convert iterator to a list and print
+        comb_list = ["".join([str(k) for k in range(1, N + 1)])]
+        comb_list += S + ["".join(sorted(c)) for c in comb]
+
+        mydict = {f"{k}": 0 for k in comb_list}
+        mydict["".join([str(k) for k in range(1, N + 1)])] = 1
+
+        for n in range(1, N + 1):
+            # print(f"P{n}")
+            mydict[f"{n}"] -= 1
+            for m in range(1, n):
+                # print(f"P{m}{n}-P{n}-P{m}")
+                mydict[f"{m}{n}"] -= 1
+                mydict[f"{n}"] += 1
+                mydict[f"{m}"] += 1
+
+        df = pd.DataFrame(index=mydict.keys())
+        # df['name'] = df.index.map(lambda x: '0'*N)
+        df["name"] = df.index.map(
+            lambda x: "".join(
+                ["1" if str(j) in x else "0" for j in range(1, N + 1)]
+            )
+        )
+        df["weight"] = df.index.map(lambda x: mydict[x])
+        df["prior"] = df.index.map(lambda x: len(x) / N)
+
+        return df
 
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
-    bomb_config = "⅓t½"
+    bomb_config = "⅓t½½"
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     print(np.round(system.P, ROUND))
     rho = system.decompose_bombs(bomb_config)  # ⅓t½ ⅓1½
+    combis = system.combis
+    print(combis)
 
     # TODO: Double-check manually and with the old numerical results.
 
@@ -257,41 +308,3 @@ def linComb(rho, outcome, bomb, N=3):
 #         # df.loc[o, b]['residuals'] = residuals
 #         reconstr_bomb = sum([x[j] * rho[j][o][b] for j in x.keys()])
 #         allclose = np.allclose(system.bombs[o][b], reconstr_bomb)
-
-
-# %%
-
-
-def jaja(N):
-    from itertools import combinations
-
-    # Define your set S
-    S = [str(s) for s in range(1, N + 1)]
-    k = 2  # Change k to the desired number of elements in each combination
-
-    # Generate n-choose-k combinations
-    comb = combinations(S, k)
-
-    # Convert iterator to a list and print
-    comb_list = S + ["".join(sorted(c)) for c in comb]
-    return comb_list
-
-
-def foo(N):
-    mydict = {f"P{k}": 0 for k in jaja(N)}
-
-    for n in range(1, N + 1):
-        print(f"P{n}")
-        mydict[f"P{n}"] += 1
-        for m in range(1, n):
-            print(f"P{m}{n}-P{n}-P{m}")
-            mydict[f"P{m}{n}"] += 1
-            mydict[f"P{n}"] -= 1
-            mydict[f"P{m}"] -= 1
-
-    return mydict
-
-
-mydict = foo(7)
-
-# %%
