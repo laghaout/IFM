@@ -34,7 +34,10 @@ class System:
     def __init__(self, b, g=None):
         # Tuple of bomb states
         if isinstance(b, str):
+            self.bomb_config = b
             self.b = tuple(bomb_dict[bomb] for bomb in b)
+        else:
+            self.b = b
 
         # Infer the number of paths
         self.N = len(self.b)
@@ -145,7 +148,7 @@ class System:
         self.coeffs["ket"] = self.coeffs.index.map(lambda x: bin(x)[2:])
 
         # Pad with zeros and add one to each "bit" so, e.g., 01 becomes 12,
-        # namely a photon on the first path and no photon on the second path.
+        # clearedly a photon on the first path and no photon on the second path.
         self.coeffs["ket"] = self.coeffs["ket"].apply(
             lambda x: "".join(
                 [str(int(y) + 1) for y in list("0" * (self.N - len(x)) + x)]
@@ -172,26 +175,43 @@ class System:
         # Normalize.
         self.coeffs /= np.sqrt(self.P)
 
-    def decompose_bombs(self, bomb_config):
-        # TODO: Generalize to N modes
+    def decompose(self, bomb_config=None):
+        if bomb_config is None:
+            bomb_config = self.b
+        N = len(bomb_config)
 
-        combis = self.Born_decomposition(len(bomb_config))
+        self.combis = self.Born_decomposition(N)
+        for n in range(1, N + 1):
+            self.combis[n] = None
+        self.combis["rho"] = pd.Series(None, dtype=object)
         epsilon = 0
 
-        rho = {c: None for c in combis.index}
+        rho = {
+            n: {m: np.zeros((2, 2), dtype=complex) for m in range(1, N + 1)}
+            for n in range(1, N + 1)
+        }
 
-        for c in combis.index:
-            system = System(bomb_config, "0" + combis.at[c, "name"])
+        for c in self.combis.index:
+            system = System(bomb_config, "0" + self.combis.at[c, "cleared"])
             system()
-            # c[3] is the prior of a photon click
+            self.combis.at[c, range(1, N + 1)] = system.P.to_list()
             epsilon += (
-                combis.at[c, "weight"] * system.P * combis.at[c, "prior"]
+                self.combis.at[c, "weight"]
+                * self.combis.at[c, "prior"]
+                * system.P
             )
-            rho[c] = system.bombs
 
-        print(f"{bomb_config}:\nepsilon =\n{np.round(epsilon, ROUND)}")
+            for outcome in range(1, N + 1):
+                for bomb in range(1, N + 1):
+                    rho[outcome][bomb] += (
+                        system.bombs[outcome][bomb][1:, 1:]
+                        * self.combis.at[c, "weight"]
+                        * self.combis.at[c, "prior"]
+                    )
 
-        self.combis = combis
+            self.combis.at[c, "rho"] = system.bombs
+
+        assert epsilon.abs().sum() < qi.TOL
 
         return rho
 
@@ -237,8 +257,8 @@ class System:
                 mydict[f"{m}"] += 1
 
         df = pd.DataFrame(index=mydict.keys())
-        # df['name'] = df.index.map(lambda x: '0'*N)
-        df["name"] = df.index.map(
+        # df['cleared'] = df.index.map(lambda x: '0'*N)
+        df["cleared"] = df.index.map(
             lambda x: "".join(
                 ["1" if str(j) in x else "0" for j in range(1, N + 1)]
             )
@@ -251,13 +271,14 @@ class System:
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
-    bomb_config = "⅓t½½"
+    bomb_config = "½½½"  # ⅓t½ ⅓1½ ⅓t½½
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     print(np.round(system.P, ROUND))
-    rho = system.decompose_bombs(bomb_config)  # ⅓t½ ⅓1½
+    summed_rho = system.decompose()
     combis = system.combis
-    print(combis)
+    print(combis.drop("rho", inplace=False, axis=1))
+    decomposed_rho = combis.rho.to_dict()
 
     # TODO: Double-check manually and with the old numerical results.
 
@@ -295,7 +316,7 @@ def linComb(rho, outcome, bomb, N=3):
 # TODO: Check linear combination leading to rho for ABC
 
 # df = pd.MultiIndex.from_product(
-#     [range(1, 4), range(1, 4)], names=["outcome", "bomb"]
+#     [range(1, 4), range(1, 4)], cleareds=["outcome", "bomb"]
 # ).to_frame()
 
 # for o in range(1, 4):
