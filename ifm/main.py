@@ -175,46 +175,6 @@ class System:
         # Normalize.
         self.coeffs /= np.sqrt(self.P)
 
-    def decompose(self, bomb_config=None):
-        if bomb_config is None:
-            bomb_config = self.b
-        N = len(bomb_config)
-
-        self.combis = self.Born_decomposition(N)
-        for n in range(1, N + 1):
-            self.combis[n] = None
-        self.combis["rho"] = pd.Series(None, dtype=object)
-        epsilon = 0
-
-        rho = {
-            n: {m: np.zeros((2, 2), dtype=complex) for m in range(1, N + 1)}
-            for n in range(1, N + 1)
-        }
-
-        for c in self.combis.index:
-            system = System(bomb_config, "0" + self.combis.at[c, "cleared"])
-            system()
-            self.combis.at[c, range(1, N + 1)] = system.P.to_list()
-            epsilon += (
-                self.combis.at[c, "weight"]
-                * self.combis.at[c, "prior"]
-                * system.P
-            )
-
-            for outcome in range(1, N + 1):
-                for bomb in range(1, N + 1):
-                    rho[outcome][bomb] += (
-                        system.bombs[outcome][bomb][1:, 1:]
-                        * self.combis.at[c, "weight"]
-                        * self.combis.at[c, "prior"]
-                    )
-
-            self.combis.at[c, "rho"] = system.bombs
-
-        assert epsilon.abs().sum() < qi.TOL
-
-        return rho
-
     @staticmethod
     def Born_decomposition(N, k=2):
         """
@@ -268,49 +228,113 @@ class System:
 
         return df
 
+    def decompose(self, bomb_config=None):
+        if bomb_config is None:
+            bomb_config = self.b
+        N = len(bomb_config)
+
+        self.combis = self.Born_decomposition(N)
+        self.combis[[n for n in range(1, N + 1)]] = np.nan
+        self.combis["rho"] = pd.Series(None, dtype=object)
+
+        summed_rho = {
+            n: {m: np.zeros((2, 2), dtype=complex) for m in range(1, N + 1)}
+            for n in range(1, N + 1)
+        }
+
+        # For each combination...
+        for c in self.combis.index:
+            # generate the corresponding system and
+            system = System(bomb_config, "0" + self.combis.at[c, "cleared"])
+            system()
+
+            # save the probabilities.
+            self.combis.at[c, range(1, N + 1)] = system.P.values
+
+            for outcome in range(1, N + 1):
+                for bomb in range(1, N + 1):
+                    summed_rho[outcome][bomb] += (
+                        system.bombs[outcome][bomb][1:, 1:]
+                        * self.combis.at[c, "weight"]
+                        * self.combis.at[c, "prior"]
+                    )
+            self.combis.at[c, "rho"] = system.bombs
+
+        epsilon = self.combis[range(1, N + 1)].mul(
+            self.combis["weight"] * self.combis["prior"], axis=0
+        )
+        assert np.allclose(epsilon.sum(axis=0).values, np.zeros(N))
+
+        return summed_rho
+
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
     bomb_config = "½½½"  # ⅓t½ ⅓1½ ⅓t½½
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
-    print(np.round(system.P, ROUND))
     summed_rho = system.decompose()
     combis = system.combis
-    print(combis.drop("rho", inplace=False, axis=1))
     decomposed_rho = combis.rho.to_dict()
+
+    print("Probabilities:\n", np.round(system.P, ROUND), sep="")
+    print(combis.drop("rho", inplace=False, axis=1))
 
     # TODO: Double-check manually and with the old numerical results.
 
+# %%
 
-def linComb(rho, outcome, bomb, N=3):
-    rho = {k: rho[k][outcome][bomb] for k in rho.keys()}
-    rho_all = rho.pop("".join([str(j) for j in range(1, N + 1)]))
-    # TODO: Try differnt combinations
-    # [rho.pop(str(x)) for x in list(range(1, N + 1))]
-    vectors = {k: v.reshape(-1, 1) for k, v in rho.items()}
 
-    # Stack the vectors horizontally
-    vectors_keys = sorted(vectors.keys())
-
-    # Return the least-squares solution.
-    matrix = np.hstack([vectors[k] for k in vectors_keys])
-
-    x, residuals, rank, s = np.linalg.lstsq(
-        matrix, rho_all.reshape(-1, 1), rcond=None
-    )
-
-    # from scipy import linalg
-    # x, residuals, rank, s = linalg.lstsq(matrix, rho_all.reshape(-1, 1))
-
-    print("residuals", residuals)
-
-    x = {
-        j: np.round(qi.trim_imaginary(x[i][0]), ROUND)
-        for i, j in enumerate(vectors_keys)
+def linComb(decomposed_rho, N=3):
+    jaja = {
+        outcome: {bomb: None for bomb in range(1, N + 1)}
+        for outcome in range(1, N + 1)
     }
 
-    return x, residuals
+    print(jaja)
+
+    for outcome in range(1, N + 1):
+        for bomb in range(1, N + 1):
+            print(">>", decomposed_rho.keys())
+            print(outcome, bomb)
+
+            # Decomposition of the bomb
+            rho = {
+                k: decomposed_rho[k][outcome][bomb]
+                for k in decomposed_rho.keys()
+            }
+
+            # Pop and save the overall state with all paths cleared.
+            rho_all = rho.pop("".join([str(j) for j in range(1, N + 1)]))
+
+            # TODO: Try differnt combinations
+            # [rho.pop(str(x)) for x in list(range(1, N + 1))]
+            vectors = {k: v.reshape(-1, 1) for k, v in rho.items()}
+
+            # Stack the vectors horizontally
+            vectors_keys = sorted(vectors.keys())
+
+            # Return the least-squares solution.
+            matrix = np.hstack([vectors[k] for k in vectors_keys])
+
+            x, residuals, rank, s = np.linalg.lstsq(
+                matrix, rho_all.reshape(-1, 1), rcond=None
+            )
+
+            # from scipy import linalg
+            # x, residuals, rank, s = linalg.lstsq(matrix, rho_all.reshape(-1, 1))
+
+            print("residuals", residuals)
+
+            x = {
+                j: np.round(qi.trim_imaginary(x[i][0]), ROUND)
+                for i, j in enumerate(vectors_keys)
+            }
+            x["residuals"] = residuals
+
+            jaja[outcome][bomb] = x
+
+    return jaja
 
 
 # TODO: Check linear combination leading to rho for ABC
@@ -329,3 +353,5 @@ def linComb(rho, outcome, bomb, N=3):
 #         # df.loc[o, b]['residuals'] = residuals
 #         reconstr_bomb = sum([x[j] * rho[j][o][b] for j in x.keys()])
 #         allclose = np.allclose(system.bombs[o][b], reconstr_bomb)
+
+jaja = linComb(decomposed_rho)
