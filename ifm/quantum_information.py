@@ -332,9 +332,9 @@ def sqrt_matrix(a):
 
 
 def fidelity(a, b):
-    # np.trace(a, b)
+    from qutip import fidelity, Qobj
 
-    pass
+    return fidelity(Qobj(a), Qobj(b))
 
 
 def reload(
