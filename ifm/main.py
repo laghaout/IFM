@@ -217,7 +217,6 @@ class System:
                 mydict[f"{m}"] += 1
 
         df = pd.DataFrame(index=mydict.keys())
-        # df['cleared'] = df.index.map(lambda x: '0'*N)
         df["cleared"] = df.index.map(
             lambda x: "".join(
                 ["1" if str(j) in x else "0" for j in range(1, N + 1)]
@@ -254,12 +253,14 @@ class System:
                 # and each bomb...
                 for bomb in range(1, N + 1):
                     # construct the overall density matrix as per the Born
-                    # decomposition
-                    reconstructed_rho[outcome][bomb] += (
-                        system.bombs[outcome][bomb][1:, 1:]
-                        * self.combis.at[c, "weight"]
-                        * self.combis.at[c, "prior"]
-                    )
+                    # decomposition in Sinha et al.
+
+                    if len(c) < N:
+                        reconstructed_rho[outcome][bomb] -= (
+                            system.bombs[outcome][bomb]
+                            * self.combis.at[c, "weight"]
+                            * self.combis.at[c, "prior"]
+                        )
             self.combis.at[c, "rho"] = system.bombs
 
         # Check the Born decomposition as per Sinha et al.
@@ -267,6 +268,16 @@ class System:
             self.combis["weight"] * self.combis["prior"], axis=0
         )
         assert np.allclose(epsilon.sum(axis=0).values, np.zeros(N))
+
+        # TODO: Make sure the reconstruction is a valid density matrix.
+        for outcome in range(1, N + 1):
+            for bomb in range(1, N + 1):
+                # TODO: Replace by an assert statement.
+                pass
+                # if not qi.is_density_matrix(
+                #         reconstructed_rho[outcome][bomb]):
+                #     print('>>', outcome, bomb)
+                #     print(reconstructed_rho[outcome][bomb])
 
         return reconstructed_rho
 
@@ -291,8 +302,19 @@ class System:
                 rho_all = rho.pop("".join([str(j) for j in range(1, N + 1)]))
 
                 # TODO: Try different combinations
-                # Remove the single paths
-                [rho.pop(str(x)) for x in list(range(1, N + 1))]
+                # Pop one more?
+                # TODO: Remove False
+                if N > 3:
+                    thelist = list(range(1, N + 1))
+                    [rho.pop(str(x)) for x in thelist]
+                    # rho.pop('12')
+
+                # The density matrices of the undisturbed paths are redundant.
+                # Remove all but one by setting them to zero.
+                cleared_paths = [k for k in rho.keys() if str(bomb) not in k]
+                if len(cleared_paths) > 0:
+                    for k in cleared_paths[:-1]:
+                        rho[k] = np.zeros((2, 2))
 
                 vectors = {k: v.reshape(-1, 1) for k, v in rho.items()}
 
@@ -319,6 +341,10 @@ class System:
                 }
                 x["residuals"] = residuals
 
+                if len(cleared_paths) > 0:
+                    for k in cleared_paths[:-1]:
+                        x[k] = 0
+
                 weights[outcome][bomb] = x
 
         decomposition = {
@@ -341,6 +367,15 @@ class System:
             for outcome in range(1, N + 1)
         }
 
+        for outcome in range(1, N + 1):
+            for bomb in range(1, N + 1):
+                # TODO: replace with an Assert
+                assert qi.is_density_matrix(
+                    reconstruction_B_rho[outcome][bomb]
+                )
+                # if not qi.is_density_matrix(reconstruction_B_rho[outcome][bomb]):
+                #     print(outcome, bomb)
+
         return decomposition, reconstruction_B_rho
 
     @staticmethod
@@ -356,7 +391,7 @@ class System:
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
-    bomb_config = "½½½½"  # ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓
+    bomb_config = "½½½½"  # ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     output_rho = system.bombs
@@ -381,8 +416,12 @@ if __name__ == "__main__":
         decomposed_rho
     )
 
-    # TODO: Compute the fidelity between the reconstructions A and B, and the
-    #       actual output density matrices.
+    # TODO:
+    # - Can the weights from the linear combinations also be used for
+    #   getting the epsilon?
+    # - Is there some kind of isomorphism? I.e. are the weights always the same
+    #   regardless of the configuration?
+    # - Could that isomorphism be represented by a transition matrix?
 
     system.compare_fidelities(output_rho, reconstruction_A_rho)
     print("---")
