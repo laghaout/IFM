@@ -223,6 +223,7 @@ class System:
             )
         )
         df["weight"] = df.index.map(lambda x: mydict[x])
+
         df["prior"] = df.index.map(lambda x: len(x) / N)
 
         return df
@@ -253,7 +254,7 @@ class System:
                 # and each bomb...
                 for bomb in range(1, N + 1):
                     # construct the overall density matrix as per the Born
-                    # decomposition in Sinha et al.
+                    # decomposition_linear in Sinha et al.
 
                     if len(c) < N:
                         reconstructed_rho[outcome][bomb] -= (
@@ -274,6 +275,7 @@ class System:
             for bomb in range(1, N + 1):
                 # TODO: Replace by an assert statement.
                 pass
+                # assert qi.is_density_matrix(reconstructed_rho[outcome][bomb])
                 # if not qi.is_density_matrix(
                 #         reconstructed_rho[outcome][bomb]):
                 #     print('>>', outcome, bomb)
@@ -347,17 +349,19 @@ class System:
 
                 weights[outcome][bomb] = x
 
-        decomposition = {
+        decomposition_linear = {
             outcome: pd.DataFrame(weights[outcome])
             for outcome in weights.keys()
         }
 
-        reconstruction_B_rho = {
+        reconstruction_linear = {
             outcome: {
                 bomb: np.sum(
                     [
                         decomposed_rho[k][outcome][bomb] * v
-                        for k, v in decomposition[outcome][bomb][:-1].items()
+                        for k, v in decomposition_linear[outcome][bomb][
+                            :-1
+                        ].items()
                     ],
                     dtype=complex,
                     axis=0,
@@ -371,12 +375,12 @@ class System:
             for bomb in range(1, N + 1):
                 # TODO: replace with an Assert
                 assert qi.is_density_matrix(
-                    reconstruction_B_rho[outcome][bomb]
+                    reconstruction_linear[outcome][bomb]
                 )
-                # if not qi.is_density_matrix(reconstruction_B_rho[outcome][bomb]):
+                # if not qi.is_density_matrix(reconstruction_linear[outcome][bomb]):
                 #     print(outcome, bomb)
 
-        return decomposition, reconstruction_B_rho
+        return decomposition_linear, reconstruction_linear
 
     @staticmethod
     def compare_fidelities(rhoA, rhoB):
@@ -391,7 +395,7 @@ class System:
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
-    bomb_config = "½½½½"  # ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½
+    bomb_config = "⅓t½"  # Try all ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     output_rho = system.bombs
@@ -399,8 +403,8 @@ if __name__ == "__main__":
     # TODO: Double-check manually and with the old numerical results
 
     # Perform the Born decomposition and save the reconstructed density
-    # matrices.
-    reconstruction_A_rho = system.decompose()
+    # matrices as per the Sinha factors.
+    reconstruction_Sinha = system.decompose()
 
     # TODO: What did I "dream" about?
 
@@ -409,10 +413,17 @@ if __name__ == "__main__":
     decomposed_rho = combis.rho.to_dict()
 
     print("Probabilities:\n", np.round(system.P, ROUND), sep="")
+    df = pd.DataFrame({"prob": system.P})
+    # df[[k for k in range(1, system.N+1)]] = None
+    for k in range(1, system.N + 1):
+        df[k] = df.apply(lambda x: qi.purity(output_rho[x.name][k]), axis=1)
+    print(df)
+    # %%
     print(combis.drop("rho", inplace=False, axis=1))
 
-    # Reconstruct the density matrices from the Born components.
-    decomposition, reconstruction_B_rho = system.decompose_linearly(
+    # Reconstruct the density matrices from the Born components based on
+    # linear regression.
+    decomposition_linear, reconstruction_linear = system.decompose_linearly(
         decomposed_rho
     )
 
@@ -423,9 +434,9 @@ if __name__ == "__main__":
     #   regardless of the configuration?
     # - Could that isomorphism be represented by a transition matrix?
 
-    system.compare_fidelities(output_rho, reconstruction_A_rho)
+    system.compare_fidelities(output_rho, reconstruction_Sinha)
     print("---")
-    system.compare_fidelities(output_rho, reconstruction_B_rho)
+    system.compare_fidelities(output_rho, reconstruction_linear)
 
 # %%
 
