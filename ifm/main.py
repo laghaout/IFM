@@ -86,6 +86,7 @@ class System:
             kets = self.coeffs.index.to_list()
 
             # For each bomb...
+            # TODO: Change the range to go from 1 to N and replace b with b-1.
             for b in range(self.N):
                 # compute the (start, end) pairs for the current outcome. See
                 # the manuscript for full details.
@@ -125,13 +126,23 @@ class System:
                 bombs[outcome][b + 1] = qi.trim_imaginary(
                     bombs[outcome][b + 1], qi.TOL
                 )
-                assert qi.is_density_matrix(bombs[outcome][b + 1])
+                assert qi.is_density_matrix(
+                    bombs[outcome][b + 1]
+                ), f"outcome {outcome}, bomb {b+1}:\n{bombs[outcome][b + 1]}\
+                        \n{self.P}"
 
                 # Move one "bit" to the right for the next bomb. Cf. the
                 # manuscript for the full details.
                 kets = [k[-1] + k[:-1] for k in kets]
 
         self.bombs = bombs
+
+        self.purity = pd.DataFrame({"prob": system.P})
+        # df[[k for k in range(1, system.N+1)]] = None
+        for k in range(1, system.N + 1):
+            self.purity[k] = self.purity.apply(
+                lambda x: qi.purity(self.bombs[x.name][k]), axis=1
+            )
 
     def compute_coeffs(self):
         """
@@ -308,7 +319,7 @@ class System:
                 # TODO: Remove False
                 if N > 3:
                     thelist = list(range(1, N + 1))
-                    [rho.pop(str(x)) for x in thelist]
+                    # [rho.pop(str(x)) for x in thelist]
                     # rho.pop('12')
 
                 # The density matrices of the undisturbed paths are redundant.
@@ -373,10 +384,10 @@ class System:
 
         for outcome in range(1, N + 1):
             for bomb in range(1, N + 1):
-                # TODO: replace with an Assert
                 assert qi.is_density_matrix(
                     reconstruction_linear[outcome][bomb]
-                )
+                ), f"outcome {outcome}, bomb {bomb}:\n{reconstruction_linear[outcome][bomb]}"
+
                 # if not qi.is_density_matrix(reconstruction_linear[outcome][bomb]):
                 #     print(outcome, bomb)
 
@@ -389,13 +400,17 @@ class System:
                 print(
                     outcome,
                     bomb,
-                    qi.fidelity(rhoA[outcome][bomb], rhoB[outcome][bomb]),
+                    np.round(
+                        qi.fidelity(rhoA[outcome][bomb], rhoB[outcome][bomb]),
+                        ROUND * 2,
+                    ),
                 )
 
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
-    bomb_config = "⅓t½"  # Try all ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½
+    # Try all ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100
+    bomb_config = "½00"
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     output_rho = system.bombs
@@ -412,13 +427,7 @@ if __name__ == "__main__":
     combis = system.combis
     decomposed_rho = combis.rho.to_dict()
 
-    print("Probabilities:\n", np.round(system.P, ROUND), sep="")
-    df = pd.DataFrame({"prob": system.P})
-    # df[[k for k in range(1, system.N+1)]] = None
-    for k in range(1, system.N + 1):
-        df[k] = df.apply(lambda x: qi.purity(output_rho[x.name][k]), axis=1)
-    print(df)
-    # %%
+    print("Probabilities and purities:\n", system.purity)
     print(combis.drop("rho", inplace=False, axis=1))
 
     # Reconstruct the density matrices from the Born components based on
@@ -438,24 +447,4 @@ if __name__ == "__main__":
     print("---")
     system.compare_fidelities(output_rho, reconstruction_linear)
 
-# %%
-
-# TODO: Check linear combination leading to rho for ABC
-
-# df = pd.MultiIndex.from_product(
-#     [range(1, 4), range(1, 4)], cleareds=["outcome", "bomb"]
-# ).to_frame()
-
-# for o in range(1, 4):
-#     for b in range(1, 4):
-#         print("outcome", o, b)
-#         x, residuals = decompose_linearly(rho, o, b)
-#         print(residuals)
-#         print(x)
-#         print()
-#         # df.loc[o, b]['residuals'] = residuals
-#         reconstr_bomb = sum([x[j] * rho[j][o][b] for j in x.keys()])
-#         allclose = np.allclose(system.bombs[o][b], reconstr_bomb)
-
-
-# %%
+    del system
