@@ -394,23 +394,34 @@ class System:
         return decomposition_linear, reconstruction_linear
 
     @staticmethod
-    def compare_fidelities(rhoA, rhoB):
-        for outcome in rhoA.keys():
-            for bomb in rhoA[outcome].keys():
-                print(
-                    outcome,
-                    bomb,
-                    np.round(
-                        qi.fidelity(rhoA[outcome][bomb], rhoB[outcome][bomb]),
-                        ROUND * 2,
-                    ),
-                )
+    def compare_fidelities(rhos):
+        actual = list(rhos.keys())[0]
+        outcomes = list(rhos[actual].keys())
+        bombs = list(rhos[actual][outcomes[0]].keys())
+
+        index = pd.MultiIndex.from_product(
+            [outcomes, bombs], names=["outcome", "bomb"]
+        )
+        df = pd.DataFrame({j: 1 for j in rhos.keys()}, index=index)
+        for c in df.columns:
+            df[c] = df.index.to_frame().apply(
+                lambda x: qi.fidelity(
+                    rhos["actual"][x["outcome"]][x["bomb"]],
+                    rhos[c][x["outcome"]][x["bomb"]],
+                ),
+                axis=1,
+            )
+        df.drop("actual", inplace=True, axis=1)
+
+        print(df)
+        return df
 
 
 # %% Run as a script, not as a module.
+
 if __name__ == "__main__":
     # Try all ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100
-    bomb_config = "½00"
+    bomb_config = "½½0"
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     output_rho = system.bombs
@@ -443,8 +454,10 @@ if __name__ == "__main__":
     #   regardless of the configuration?
     # - Could that isomorphism be represented by a transition matrix?
 
-    system.compare_fidelities(output_rho, reconstruction_Sinha)
-    print("---")
-    system.compare_fidelities(output_rho, reconstruction_linear)
-
-    del system
+    system.compare_fidelities(
+        dict(
+            actual=output_rho,
+            Sinha=reconstruction_Sinha,
+            linear=reconstruction_linear,
+        )
+    )
