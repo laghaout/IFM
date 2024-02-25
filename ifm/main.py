@@ -394,7 +394,7 @@ class System:
         return decomposition_linear, reconstruction_linear
 
     @staticmethod
-    def compare_fidelities(rhos):
+    def compare_fidelities(rhos, decomposition_linear):
         actual = list(rhos.keys())[0]
         outcomes = list(rhos[actual].keys())
         bombs = list(rhos[actual][outcomes[0]].keys())
@@ -402,7 +402,7 @@ class System:
         index = pd.MultiIndex.from_product(
             [outcomes, bombs], names=["outcome", "bomb"]
         )
-        df = pd.DataFrame({j: 1 for j in rhos.keys()}, index=index)
+        df = pd.DataFrame({j: None for j in rhos.keys()}, index=index)
         for c in df.columns:
             df[c] = df.index.to_frame().apply(
                 lambda x: qi.fidelity(
@@ -412,6 +412,17 @@ class System:
                 axis=1,
             )
         df.drop("actual", inplace=True, axis=1)
+
+        decompositions = list(decomposition_linear[outcomes[0]].index)
+        print(">>", decompositions)
+        for d in decompositions:
+            df[d] = df.index.to_frame().apply(
+                lambda x: decomposition_linear[x["outcome"]].at[d, x["bomb"]],
+                axis=1,
+            )
+            # df[d] = None
+            # df[d] = df[d].apply(
+            #     lambda x: x)
 
         print(df)
         return df
@@ -454,10 +465,37 @@ if __name__ == "__main__":
     #   regardless of the configuration?
     # - Could that isomorphism be represented by a transition matrix?
 
-    system.compare_fidelities(
+    summary = system.compare_fidelities(
         dict(
             actual=output_rho,
             Sinha=reconstruction_Sinha,
             linear=reconstruction_linear,
-        )
+        ),
+        decomposition_linear,
     )
+
+
+# %%
+
+
+def summary_df(components):
+    rangeN = range(1, system.N + 1)
+    index = pd.MultiIndex.from_product(
+        [rangeN, rangeN], names=["outcome", "bomb"]
+    )
+    columns = pd.MultiIndex.from_tuples(
+        [(c,) for c in ["purity", "fidelity"]]
+        + [("weight", c) for c in components[1:]]
+        + [("residuals",)]
+        + [("rho", c) for c in components]
+    )
+
+    # columns = ['purity', 'fidelity']+components[1:]+['residuals']
+    df = pd.DataFrame(columns=columns, index=index)
+
+    return df
+
+
+summary = summary_df(combis.index.to_list())
+
+print(summary)
