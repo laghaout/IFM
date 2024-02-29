@@ -136,8 +136,8 @@ class System:
                 # manuscript for the full details.
                 kets = [k[-1] + k[:-1] for k in kets]
 
+        # TODO: Delete once we have the report
         self.bombs = bombs
-
         self.purity = pd.DataFrame({"prob": system.P})
         # df[[k for k in range(1, system.N+1)]] = None
         for k in range(1, system.N + 1):
@@ -145,7 +145,7 @@ class System:
                 lambda x: qi.purity(self.bombs[x.name][k]), axis=1
             )
 
-        self.summary = system.summary_df()
+        self.report = system.prep_report(bombs)
 
     def compute_coeffs(self):
         """
@@ -242,8 +242,10 @@ class System:
 
         return df
 
-    def summary_df(self):
+    def prep_report(self, bombs):
         components = self.Born_decomposition(self.N)
+        components = components.index
+
         rangeN = range(1, system.N + 1)
         index = pd.MultiIndex.from_product(
             [rangeN, rangeN], names=["outcome", "bomb"]
@@ -278,8 +280,9 @@ class System:
             )
         columns = pd.MultiIndex.from_tuples(columns)
 
-        # columns = ['purity', 'fidelity']+components[1:]+['residuals']
         df = pd.DataFrame(columns=columns, index=index)
+        df.sort_index(axis=1, inplace=True)
+        df.loc[:, ("actual", "rho")] = 7
 
         return df
 
@@ -291,3 +294,44 @@ if __name__ == "__main__":
     bomb_config = "½½0"
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
+    report = system.report
+    print(report.actual)
+
+
+# %%
+if False:
+    import pandas as pd
+
+    N = 3
+    rangeN = list(range(1, N + 1))
+    index = pd.MultiIndex.from_product(
+        [rangeN, rangeN], names=["level1", "level2"]
+    )
+    columns = [
+        (
+            "col1",
+            "col1.1",
+        ),
+        (
+            "col1",
+            "col1.2",
+        ),
+    ]
+    components = range(1, 3)
+    columns += [("Col2", "Col2.1", f"Col2.1.{c}") for c in components]
+    columns += [("Col2", "Col2.2", f"Col2.2.{c}") for c in components]
+    columns = pd.MultiIndex.from_tuples(columns)
+    # print(columns.is_lexsorted())
+
+    df = pd.DataFrame(columns=columns, index=index).sort_index(axis=1)
+    # df = df.sort_index(axis=1)
+
+    df.loc[
+        :,
+        (
+            "col1",
+            "col1.2",
+        ),
+    ] = 7
+
+    print(df)
