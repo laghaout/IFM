@@ -278,11 +278,20 @@ class System:
                 + [(decomposition, "purity", c) for c in components]
                 + [(decomposition, "rho", c) for c in components]
             )
+
         columns = pd.MultiIndex.from_tuples(columns)
 
         df = pd.DataFrame(columns=columns, index=index)
+
         df.sort_index(axis=1, inplace=True)
-        df.loc[:, ("actual", "rho")] = 7
+        df[("actual", "rho")] = df[("actual", "rho")].apply(
+            lambda x: bombs[x.name[0]][x.name[1]], axis=1
+        )
+        df[("actual", "purity")] = df[("actual", "rho")].apply(
+            lambda x: qi.purity(bombs[x.name[0]][x.name[1]]), axis=1
+        )
+
+        # df = df.actual
 
         return df
 
@@ -291,47 +300,56 @@ class System:
 
 if __name__ == "__main__":
     # Try all ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100
-    bomb_config = "½½0"
+    bomb_config = "⅓t½"
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     report = system.report
     print(report.actual)
+    dtypes = report.dtypes
+
+# %%
+
+zaza = pd.DataFrame(
+    {1: [np.ones((2, 2)) * 1j, np.ones((2, 2)) * 1j], 2: range(2)}
+)
 
 
 # %%
 if False:
-    import pandas as pd
 
-    N = 3
-    rangeN = list(range(1, N + 1))
-    index = pd.MultiIndex.from_product(
-        [rangeN, rangeN], names=["level1", "level2"]
-    )
-    columns = [
-        (
-            "col1",
-            "col1.1",
-        ),
-        (
-            "col1",
-            "col1.2",
-        ),
-    ]
-    components = range(1, 3)
-    columns += [("Col2", "Col2.1", f"Col2.1.{c}") for c in components]
-    columns += [("Col2", "Col2.2", f"Col2.2.{c}") for c in components]
-    columns = pd.MultiIndex.from_tuples(columns)
-    # print(columns.is_lexsorted())
+    def lexsort_error_demo():
+        import pandas as pd
 
-    df = pd.DataFrame(columns=columns, index=index).sort_index(axis=1)
-    # df = df.sort_index(axis=1)
+        N = 3
+        rangeN = list(range(1, N + 1))
+        index = pd.MultiIndex.from_product(
+            [rangeN, rangeN], names=["level1", "level2"]
+        )
+        columns = [
+            (
+                "col1",
+                "col1.1",
+            ),
+            (
+                "col1",
+                "col1.2",
+            ),
+        ]
+        components = range(1, 3)
+        columns += [("Col2", "Col2.1", f"Col2.1.{c}") for c in components]
+        columns += [("Col2", "Col2.2", f"Col2.2.{c}") for c in components]
+        columns = pd.MultiIndex.from_tuples(columns)
+        # print(columns.is_lexsorted())
 
-    df.loc[
-        :,
-        (
-            "col1",
-            "col1.2",
-        ),
-    ] = 7
+        df = pd.DataFrame(columns=columns, index=index).sort_index(axis=1)
+        # df = df.sort_index(axis=1)
 
-    print(df)
+        df.loc[
+            :,
+            (
+                "col1",
+                "col1.2",
+            ),
+        ] = 7
+
+        print(df)
