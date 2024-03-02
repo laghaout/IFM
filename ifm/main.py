@@ -137,15 +137,14 @@ class System:
                 kets = [k[-1] + k[:-1] for k in kets]
 
         # TODO: Delete once we have the report
-        self.bombs = bombs
-        self.purity = pd.DataFrame({"prob": system.P})
-        # df[[k for k in range(1, system.N+1)]] = None
-        for k in range(1, system.N + 1):
+        self.bombs = bombs  # TODO: Delete when done.
+        self.purity = pd.DataFrame({"prob": self.P})
+        for k in range(1, self.N + 1):
             self.purity[k] = self.purity.apply(
                 lambda x: qi.purity(self.bombs[x.name][k]), axis=1
             )
 
-        self.report = system.prep_report(bombs)
+        self.report = self.prep_report(bombs)
 
     def compute_coeffs(self):
         """
@@ -244,60 +243,221 @@ class System:
 
     def prep_report(self, bombs):
         components = self.Born_decomposition(self.N)
+        self.combis = components  # TODO: Delete when not needed anymore
         components = components.index
 
-        rangeN = range(1, system.N + 1)
+        rangeN = list(range(1, self.N + 1))
         index = pd.MultiIndex.from_product(
-            [rangeN, rangeN], names=["outcome", "bomb"]
+            [rangeN] * 2, names=["outcome", "bomb"]
         )
-        columns = [
-            (
-                "actual",
-                "purity",
-            ),
-            (
-                "actual",
-                "rho",
-            ),
-        ]
-        for decomposition in ("Born", "linear"):
+
+        columns = (
+            [
+                (
+                    "actual",
+                    "rho",
+                ),
+                (
+                    "actual",
+                    "purity",
+                ),
+            ]
+            + [("actual", "rho", c) for c in components[1:]]
+            + [("actual", "purity", c) for c in components[1:]]
+        )
+        for reconstruction in ("born", "linear"):
             columns += (
                 [
                     (
-                        decomposition,
-                        "fidelity",
-                    )
-                ]
-                + [(decomposition, "weight", c) for c in components[1:]]
-                + [
+                        reconstruction,
+                        "rho",
+                    ),
                     (
-                        decomposition,
-                        "residuals",
-                    )
+                        reconstruction,
+                        "purity",
+                    ),
+                    (
+                        reconstruction,
+                        "fidelity",
+                    ),
                 ]
-                + [(decomposition, "purity", c) for c in components]
-                + [(decomposition, "rho", c) for c in components]
+                + [(reconstruction, "weight", c) for c in components[1:]]
+                + [(reconstruction, "residuals")]
             )
-
         columns = pd.MultiIndex.from_tuples(columns)
 
         df = pd.DataFrame(columns=columns, index=index)
 
-        df.sort_index(axis=1, inplace=True)
-        df[("actual", "rho")] = df[("actual", "rho")].apply(
+        df[("actual", "rho", None)] = df.apply(
             lambda x: bombs[x.name[0]][x.name[1]], axis=1
         )
-        df[("actual", "purity")] = df[("actual", "rho")].apply(
-            lambda x: qi.purity(bombs[x.name[0]][x.name[1]]), axis=1
+        df[("actual", "purity", None)] = df[("actual", "rho", None)].apply(
+            lambda x: qi.purity(x)
         )
-
-        # df = df.actual
 
         return df
 
+    # TODO: Figure out the problem with self recusion.
+    @staticmethod
+    def decompose(self):
+        N = self.N
+
+        self.combis[[n for n in range(1, N + 1)]] = np.nan
+        self.combis["rho"] = pd.Series(None, dtype=object)
+
+        reconstructed_rho = {
+            n: {m: np.zeros((2, 2), dtype=complex) for m in range(1, N + 1)}
+            for n in range(1, N + 1)
+        }
+
+        # For each Born decomposition...
+        for ci, c in enumerate(self.combis.index):
+            # generate the corresponding system...
+            system = System(bomb_config, "0" + self.combis.at[c, "cleared"])
+            system()
+
+            # and save the probabilities.
+            self.combis.at[c, range(1, N + 1)] = system.P.values
+
+            # For each outcome...
+            for outcome in range(1, N + 1):
+                # and each bomb...
+                for bomb in range(1, N + 1):
+                    # construct the overall density matrix as per the Born
+                    # decomposition_linear in Sinha et al.
+
+                    # Account for the delimiter
+                    if ci > 0:
+                        reconstructed_rho[outcome][bomb] -= (
+                            system.bombs[outcome][bomb]
+                            * self.combis.at[c, "weight"]
+                            * self.combis.at[c, "prior"]
+                        )
+            self.combis.at[c, "rho"] = system.bombs
+
+        # Check the Born decomposition as per Sinha et al.
+        epsilon = self.combis[range(1, N + 1)].mul(
+            self.combis["weight"] * self.combis["prior"], axis=0
+        )
+        print(epsilon)
+        assert np.allclose(epsilon.sum(axis=0).values, np.zeros(N))
+
+        # TODO: Make sure the reconstruction is a valid density matrix.
+        for outcome in range(1, N + 1):
+            for bomb in range(1, N + 1):
+                # TODO: Replace by an assert statement.
+                pass
+                # assert qi.is_density_matrix(reconstructed_rho[outcome][bomb])
+                # if not qi.is_density_matrix(
+                #         reconstructed_rho[outcome][bomb]):
+                #     print('>>', outcome, bomb)
+                #     print(reconstructed_rho[outcome][bomb])
+
+        return reconstructed_rho
+
+    @staticmethod
+    def decompose_linearly(decomposed_rho, delimiter=DELIMITER):
+        N = len(decomposed_rho["1"])
+
+        weights = {
+            outcome: {bomb: None for bomb in range(1, N + 1)}
+            for outcome in range(1, N + 1)
+        }
+
+        for outcome in range(1, N + 1):
+            for bomb in range(1, N + 1):
+                # Decomposition of the bomb
+                rho = {
+                    k: decomposed_rho[k][outcome][bomb]
+                    for k in decomposed_rho.keys()
+                }
+
+                # Pop and save the overall state with all paths cleared.
+                rho_all = rho.pop(
+                    delimiter.join([str(j) for j in range(1, N + 1)])
+                )
+
+                # TODO: Try different combinations
+                # Pop one more?
+                # TODO: Remove False
+                if N > 3:
+                    thelist = list(range(1, N + 1))
+                    # [rho.pop(str(x)) for x in thelist]
+                    # rho.pop('12')
+
+                # The density matrices of the undisturbed paths are redundant.
+                # Remove all but one by setting them to zero.
+                cleared_paths = [k for k in rho.keys() if str(bomb) not in k]
+                if len(cleared_paths) > 0:
+                    for k in cleared_paths[:-1]:
+                        rho[k] = np.zeros((2, 2))
+
+                vectors = {k: v.reshape(-1, 1) for k, v in rho.items()}
+
+                # Stack the vectors horizontally
+                vectors_keys = sorted(vectors.keys())
+
+                # Return the least-squares solution.
+                matrix = np.hstack([vectors[k] for k in vectors_keys])
+
+                x, residuals, rank, s = np.linalg.lstsq(
+                    matrix, rho_all.reshape(-1, 1), rcond=None
+                )
+
+                # from scipy import linalg
+                # x, residuals, rank, s = linalg.lstsq(
+                #     matrix, rho_all.reshape(-1, 1)
+                # )
+
+                # TODO: Round, and examine visually the decompositions. E.g.,
+                # parity, etc.
+                x = {
+                    j: qi.trim_imaginary(x[i][0])
+                    for i, j in enumerate(vectors_keys)
+                }
+                x["residuals"] = residuals
+
+                if len(cleared_paths) > 0:
+                    for k in cleared_paths[:-1]:
+                        x[k] = 0
+
+                weights[outcome][bomb] = x
+
+        decomposition_linear = {
+            outcome: pd.DataFrame(weights[outcome])
+            for outcome in weights.keys()
+        }
+
+        reconstruction_linear = {
+            outcome: {
+                bomb: np.sum(
+                    [
+                        decomposed_rho[k][outcome][bomb] * v
+                        for k, v in decomposition_linear[outcome][bomb][
+                            :-1
+                        ].items()
+                    ],
+                    dtype=complex,
+                    axis=0,
+                )
+                for bomb in range(1, N + 1)
+            }
+            for outcome in range(1, N + 1)
+        }
+
+        for outcome in range(1, N + 1):
+            for bomb in range(1, N + 1):
+                assert qi.is_density_matrix(
+                    reconstruction_linear[outcome][bomb]
+                ), f"outcome {outcome}, bomb {bomb}:\n{reconstruction_linear[outcome][bomb]}"
+
+                # if not qi.is_density_matrix(reconstruction_linear[outcome][bomb]):
+                #     print(outcome, bomb)
+
+        return decomposition_linear, reconstruction_linear
+
 
 # %% Run as a script, not as a module.
-
 if __name__ == "__main__":
     # Try all ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100
     bomb_config = "⅓t½"
@@ -306,12 +466,13 @@ if __name__ == "__main__":
     report = system.report
     print(report.actual)
     dtypes = report.dtypes
-
-# %%
-
-zaza = pd.DataFrame(
-    {1: [np.ones((2, 2)) * 1j, np.ones((2, 2)) * 1j], 2: range(2)}
-)
+    combis = system.combis
+    actual = report.actual
+    bombs = system.bombs
+    reconstructed_Born = system.decompose(system)
+    decomposition_linear, reconstruction_linear = system.decompose_linearly(
+        system.combis.rho.to_dict()
+    )
 
 
 # %%
