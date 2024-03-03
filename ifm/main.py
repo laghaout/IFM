@@ -243,7 +243,7 @@ class System:
 
     def prep_report(self, bombs):
         components = self.Born_decomposition(self.N)
-        self.combis = components  # TODO: Delete when not needed anymore
+        self.combis = components
         components = components.index
 
         rangeN = list(range(1, self.N + 1))
@@ -297,49 +297,56 @@ class System:
 
         return df
 
-    # TODO: Figure out the problem with self recusion.
-    @staticmethod
-    def decompose(self):
+    def decompose_born(self):
+        # Retrieve the number of modes.
         N = self.N
 
+        # Add the outcome probabilities and the density matrices for each
+        # combination.
         self.combis[[n for n in range(1, N + 1)]] = np.nan
         self.combis["rho"] = pd.Series(None, dtype=object)
 
+        # Prepare the reconstructed density matrix for each outcome and each
+        # bomb.
         reconstructed_rho = {
             n: {m: np.zeros((2, 2), dtype=complex) for m in range(1, N + 1)}
             for n in range(1, N + 1)
         }
 
-        # For each Born decomposition...
+        # For each Born decomposition,
         for ci, c in enumerate(self.combis.index):
-            # generate the corresponding system...
+            # generate the corresponding system
             system = System(bomb_config, "0" + self.combis.at[c, "cleared"])
             system()
 
-            # and save the probabilities.
+            # and save the outcome probabilities.
             self.combis.at[c, range(1, N + 1)] = system.P.values
 
-            # For each outcome...
+            # For each outcome
             for outcome in range(1, N + 1):
-                # and each bomb...
+                # and each bomb
                 for bomb in range(1, N + 1):
                     # construct the overall density matrix as per the Born
-                    # decomposition_linear in Sinha et al.
-
-                    # Account for the delimiter
+                    # decomposition in Sinha et al. Note that we start at `ci`
+                    # greater than zero so as to exclude the case where all
+                    # modes are completely cleared. Note also that the factors
+                    # are subtracted, not added, since they're already the
+                    # negatives of what they should be. Cf. Eqs. (5) and (6) of
+                    # Sinha et al.
                     if ci > 0:
                         reconstructed_rho[outcome][bomb] -= (
                             system.bombs[outcome][bomb]
                             * self.combis.at[c, "weight"]
                             * self.combis.at[c, "prior"]
                         )
+
+            # TODO: Delete
             self.combis.at[c, "rho"] = system.bombs
 
         # Check the Born decomposition as per Sinha et al.
         epsilon = self.combis[range(1, N + 1)].mul(
             self.combis["weight"] * self.combis["prior"], axis=0
         )
-        print(epsilon)
         assert np.allclose(epsilon.sum(axis=0).values, np.zeros(N))
 
         # TODO: Make sure the reconstruction is a valid density matrix.
@@ -353,10 +360,17 @@ class System:
                 #     print('>>', outcome, bomb)
                 #     print(reconstructed_rho[outcome][bomb])
 
+        for c in self.combis.index[1:]:
+            self.report[("actual", "rho", c)] = self.report.apply(
+                lambda x: self.combis.at[c, "rho"][x.name[0]][x.name[1]],
+                axis=1,
+            )
+
         return reconstructed_rho
 
-    @staticmethod
-    def decompose_linearly(decomposed_rho, delimiter=DELIMITER):
+    # @staticmethod
+    def decompose_linearly(self, delimiter=DELIMITER):
+        decomposed_rho = self.combis.rho.to_dict()
         N = len(decomposed_rho["1"])
 
         weights = {
@@ -464,16 +478,16 @@ if __name__ == "__main__":
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     report = system.report
-    print(report.actual)
+    # print(report.actual)
     dtypes = report.dtypes
-    combis = system.combis
     actual = report.actual
     bombs = system.bombs
-    reconstructed_Born = system.decompose(system)
-    decomposition_linear, reconstruction_linear = system.decompose_linearly(
-        system.combis.rho.to_dict()
+    reconstructed_Born = system.decompose_born()
+    combis = system.combis
+    decomposition_linear, reconstruction_linear = system.decompose_linearly()
+    epsilon = system.combis[range(1, system.N + 1)].mul(
+        system.combis["weight"] * system.combis["prior"], axis=0
     )
-
 
 # %%
 if False:
