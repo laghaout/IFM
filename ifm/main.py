@@ -144,7 +144,8 @@ class System:
                 lambda x: qi.purity(self.bombs[x.name][k]), axis=1
             )
 
-        self.report = self.prep_report(bombs)
+        self.combis = self.Born_decomposition(self.N)
+        self.report = self.prep_report()
 
     def compute_coeffs(self):
         """
@@ -221,10 +222,8 @@ class System:
         mydict[delimiter.join([str(k) for k in range(1, N + 1)])] = 1
 
         for n in range(1, N + 1):
-            # print(f"P{n}")
             mydict[f"{n}"] -= 1
             for m in range(1, n):
-                # print(f"P{m}{n}-P{n}-P{m}")
                 mydict[f"{m}{delimiter}{n}"] -= 1
                 mydict[f"{n}"] += 1
                 mydict[f"{m}"] += 1
@@ -236,15 +235,17 @@ class System:
             )
         )
         df["weight"] = df.index.map(lambda x: mydict[x])
-
         df["prior"] = df.index.map(lambda x: len(x.split(delimiter)) / N)
+
+        # Add the outcome probabilities and the density matrices for each
+        # combination.
+        df[[n for n in range(1, N + 1)]] = np.nan
+        df["rho"] = pd.Series(None, dtype=object)
 
         return df
 
-    def prep_report(self, bombs):
-        components = self.Born_decomposition(self.N)
-        self.combis = components
-        components = components.index
+    def prep_report(self):
+        components = self.combis.index
 
         rangeN = list(range(1, self.N + 1))
         index = pd.MultiIndex.from_product(
@@ -289,7 +290,7 @@ class System:
         df = pd.DataFrame(columns=columns, index=index)
 
         df[("actual", "rho", None)] = df.apply(
-            lambda x: bombs[x.name[0]][x.name[1]], axis=1
+            lambda x: self.bombs[x.name[0]][x.name[1]], axis=1
         )
         df[("actual", "purity", None)] = df[("actual", "rho", None)].apply(
             lambda x: qi.purity(x)
@@ -300,11 +301,6 @@ class System:
     def decompose_born(self):
         # Retrieve the number of modes.
         N = self.N
-
-        # Add the outcome probabilities and the density matrices for each
-        # combination.
-        self.combis[[n for n in range(1, N + 1)]] = np.nan
-        self.combis["rho"] = pd.Series(None, dtype=object)
 
         # Prepare the reconstructed density matrix for each outcome and each
         # bomb.
@@ -365,13 +361,38 @@ class System:
                 lambda x: self.combis.at[c, "rho"][x.name[0]][x.name[1]],
                 axis=1,
             )
+            self.report[("actual", "purity", c)] = self.report.apply(
+                lambda x: qi.purity(
+                    self.combis.at[c, "rho"][x.name[0]][x.name[1]]
+                ),
+                axis=1,
+            )
+            self.report[("born", "weight", c)] = (
+                self.combis.at[c, "weight"] * self.combis.at[c, "prior"]
+            )
+
+        self.report[("born", "rho", None)] = self.report.apply(
+            lambda x: reconstructed_rho[x.name[0]][x.name[1]],
+            axis=1,
+        )
+        self.report[("born", "purity", None)] = self.report[
+            ("born", "rho", None)
+        ].apply(lambda x: qi.purity(x) if qi.is_density_matrix(x) else np.nan)
+        self.report[("born", "fidelity", None)] = self.report.apply(
+            lambda x: qi.fidelity(
+                x[("born", "rho", None)], x[("actual", "rho", None)]
+            )
+            if qi.is_density_matrix(x[("born", "rho", None)])
+            else np.nan,
+            axis=1,
+        )
 
         return reconstructed_rho
 
     # @staticmethod
-    def decompose_linearly(self, delimiter=DELIMITER):
+    def decompose_linear_old(self, delimiter=DELIMITER):
         decomposed_rho = self.combis.rho.to_dict()
-        N = len(decomposed_rho["1"])
+        N = self.N
 
         weights = {
             outcome: {bomb: None for bomb in range(1, N + 1)}
@@ -470,6 +491,23 @@ class System:
 
         return decomposition_linear, reconstruction_linear
 
+    # Consider doing the linear regression over all the bombs and outcomes at
+    # once, and not just per bomb-outcome.
+    def decompose_linear(self, delimiter=DELIMITER):
+        decomposition_linear = None
+        reconstruction_linear = None
+
+        matrix = self.report.actual.rho.map(lambda x: x.reshape(-1, 1))
+        matrix = matrix.apply(
+            lambda x: np.hstack([x[k] for k in matrix.columns[1:]]), axis=1
+        )
+
+        # x, residuals, rank, s = np.linalg.lstsq(
+        #     matrix, self.report.reshape(-1, 1), rcond=None
+        # )
+
+        return decomposition_linear, matrix
+
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
@@ -484,10 +522,11 @@ if __name__ == "__main__":
     bombs = system.bombs
     reconstructed_Born = system.decompose_born()
     combis = system.combis
-    decomposition_linear, reconstruction_linear = system.decompose_linearly()
+    decomposition_linear, reconstruction_linear = system.decompose_linear()
     epsilon = system.combis[range(1, system.N + 1)].mul(
         system.combis["weight"] * system.combis["prior"], axis=0
     )
+    # report = report.T
 
 # %%
 if False:
