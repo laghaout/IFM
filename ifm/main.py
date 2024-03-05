@@ -190,7 +190,7 @@ class System:
         self.coeffs /= np.sqrt(self.P)
 
     @staticmethod
-    def Born_decomposition(N, k=2, delimiter=DELIMITER):
+    def Born_decomposition(N, k=2, delimiter=DELIMITER, sort=True):
         """
         Decompose the modes as per Born's rule.
 
@@ -214,9 +214,11 @@ class System:
         # Generate n-choose-k combinations
         comb = combinations(S, k)
 
-        # Convert iterator to a list and print
+        # Convert iterator to a list
         comb_list = [delimiter.join([str(k) for k in range(1, N + 1)])]
         comb_list += S + [delimiter.join(sorted(c)) for c in comb]
+        # Sort the born components
+        comb_list = [comb_list[0]] + sorted(comb_list[1:])
 
         mydict = {f"{k}": 0 for k in comb_list}
         mydict[delimiter.join([str(k) for k in range(1, N + 1)])] = 1
@@ -528,42 +530,34 @@ if __name__ == "__main__":
     )
     # report = report.T
 
+
 # %%
-if False:
 
-    def lexsort_error_demo():
-        import pandas as pd
+decomposition_linear_bu = decomposition_linear
+reconstruction_linear_bu = reconstruction_linear.copy()
 
-        N = 3
-        rangeN = list(range(1, N + 1))
-        index = pd.MultiIndex.from_product(
-            [rangeN, rangeN], names=["level1", "level2"]
-        )
-        columns = [
-            (
-                "col1",
-                "col1.1",
-            ),
-            (
-                "col1",
-                "col1.2",
-            ),
-        ]
-        components = range(1, 3)
-        columns += [("Col2", "Col2.1", f"Col2.1.{c}") for c in components]
-        columns += [("Col2", "Col2.2", f"Col2.2.{c}") for c in components]
-        columns = pd.MultiIndex.from_tuples(columns)
-        # print(columns.is_lexsorted())
+# TODO: Replace report by self.report
+# Reshape the matrices as vectors
+matrix = report.actual.rho.map(lambda x: x.reshape(-1, 1))
+decompositions = matrix.columns[1:]
+matrix["Vecs"] = matrix.apply(
+    lambda x: np.hstack([x[k] for k in decompositions]), axis=1
+)
+matrix.drop(decompositions, axis=1, inplace=True)
+# matrix['res'] = matrix.apply(lambda x: x[np.nan], axis=1)
+matrix["res"] = matrix.apply(
+    lambda x: np.linalg.lstsq(x["Vecs"], x[np.nan].reshape(-1, 1), rcond=None),
+    axis=1,
+)
 
-        df = pd.DataFrame(columns=columns, index=index).sort_index(axis=1)
-        # df = df.sort_index(axis=1)
+zaza = report.copy()
+zaza[("linear", "weight")] = zaza.linear.weight.map(lambda x: 1)
+print(zaza.linear.weight)
 
-        df.loc[
-            :,
-            (
-                "col1",
-                "col1.2",
-            ),
-        ] = 7
+# report[('linear', 'weight',)] = report[('linear', 'weight',)].map(
+#     lambda x: 1)
+# print(report.linear.weight)
 
-        print(df)
+# x, residuals, rank, s = np.linalg.lstsq(
+#     matrix, self.report.reshape(-1, 1), rcond=None
+# )
