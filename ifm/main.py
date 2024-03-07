@@ -550,9 +550,35 @@ matrix["res"] = matrix.apply(
     axis=1,
 )
 
-zaza = report.copy()
-zaza[("linear", "weight")] = zaza.linear.weight.map(lambda x: 1)
-print(zaza.linear.weight)
+
+for i, col in enumerate(report.linear.weight.columns):
+    report.loc[:, ("linear", "weight", col)] = matrix["res"].apply(
+        lambda x: x[0][i][0]
+    )  # x[0][c]
+report.loc[:, ("linear", "residuals", None)] = matrix["res"].apply(
+    lambda x: x[0][1]
+)
+
+report.loc[:, ("linear", "rho", slice(None))] = report.apply(
+    lambda x: (x[("actual", "rho")][1:] @ x[("linear", "weight")])[0], axis=1
+)
+
+# report.loc[:, ("linear", "rho", slice(None))] = report.linear.rho.apply(
+#     lambda x: x)
+
+A = report.linear.rho
+print(A)
+# print(report.linear.rho.loc[(1,1)].values[0])
+# print(report.linear.rho)
+
+# # zaza = report.linear.weight.to_numpy(dtype=complex, copy=True)
+# # zaza = report.actual.rho.map(lambda x: x)
+
+# print(report.linear.rho)
+
+
+# zaza.loc[:, ("linear", "weight")] = zaza.loc[:, ("linear", "weight")].map(lambda x: 1)
+# print(zaza.linear.weight)
 
 # report[('linear', 'weight',)] = report[('linear', 'weight',)].map(
 #     lambda x: 1)
