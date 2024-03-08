@@ -550,40 +550,37 @@ matrix["res"] = matrix.apply(
     axis=1,
 )
 
-
 for i, col in enumerate(report.linear.weight.columns):
     report.loc[:, ("linear", "weight", col)] = matrix["res"].apply(
-        lambda x: x[0][i][0]
+        lambda x: qi.trim_imaginary(x[0][i][0])
     )  # x[0][c]
+
 report.loc[:, ("linear", "residuals", None)] = matrix["res"].apply(
     lambda x: x[0][1]
 )
 
+# report.loc[:, ("linear", "rho", slice(None))] = report.apply(
+#     lambda x: (x[("actual", "rho")][1:] @ x[("linear", "weight")]), axis=1
+# )
+
 report.loc[:, ("linear", "rho", slice(None))] = report.apply(
-    lambda x: (x[("actual", "rho")][1:] @ x[("linear", "weight")])[0], axis=1
+    lambda x: (x[("actual", "rho")][1:] @ x[("linear", "weight")]), axis=1
 )
 
-# report.loc[:, ("linear", "rho", slice(None))] = report.linear.rho.apply(
-#     lambda x: x)
+report.loc[:, ("linear", "rho", slice(None))] = report.loc[
+    :, ("linear", "rho", slice(None))
+].apply(lambda x: x.values.item(), axis=1)
 
-A = report.linear.rho
-print(A)
-# print(report.linear.rho.loc[(1,1)].values[0])
-# print(report.linear.rho)
+# A = report.loc[:, ("linear", "rho", np.nan)].iloc[3]
 
-# # zaza = report.linear.weight.to_numpy(dtype=complex, copy=True)
-# # zaza = report.actual.rho.map(lambda x: x)
-
-# print(report.linear.rho)
-
-
-# zaza.loc[:, ("linear", "weight")] = zaza.loc[:, ("linear", "weight")].map(lambda x: 1)
-# print(zaza.linear.weight)
-
-# report[('linear', 'weight',)] = report[('linear', 'weight',)].map(
-#     lambda x: 1)
-# print(report.linear.weight)
-
-# x, residuals, rank, s = np.linalg.lstsq(
-#     matrix, self.report.reshape(-1, 1), rcond=None
-# )
+report[("linear", "purity", None)] = report[("linear", "rho", None)].apply(
+    lambda x: qi.purity(x) if qi.is_density_matrix(x) else np.nan
+)
+report[("linear", "fidelity", None)] = report.apply(
+    lambda x: qi.fidelity(
+        x[("actual", "rho", None)], x[("linear", "rho", None)]
+    )
+    if qi.is_density_matrix(x[("linear", "rho", None)])
+    else np.nan,
+    axis=1,
+)

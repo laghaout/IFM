@@ -315,7 +315,9 @@ def trim_imaginary(matrix, tol=TOL):
 
     """
 
-    if (matrix.imag < tol).all():
+    if isinstance(matrix, complex) and matrix.imag < tol:
+        matrix = matrix.real
+    elif (matrix.imag < tol).all():
         matrix = matrix.real
 
     return matrix
