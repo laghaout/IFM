@@ -81,7 +81,7 @@ class System:
             for outcome in range(1, self.N + 1)
         }
 
-        # For each outcome...
+        # For each outcome,
         for outcome in range(1, self.N + 1):
             # retrieve the post-measurement state (ket vectors).
             kets = self.coeffs.index.to_list()
@@ -136,16 +136,9 @@ class System:
                 # manuscript for the full details.
                 kets = [k[-1] + k[:-1] for k in kets]
 
-        # TODO: Delete once we have the report
-        self.bombs = bombs  # TODO: Delete when done.
-        self.purity = pd.DataFrame({"prob": self.P})
-        for k in range(1, self.N + 1):
-            self.purity[k] = self.purity.apply(
-                lambda x: qi.purity(self.bombs[x.name][k]), axis=1
-            )
-
         self.combis = self.Born_decomposition(self.N)
-        self.report = self.prep_report()
+
+        self.report = self.prep_report(bombs)
 
     def compute_coeffs(self):
         """
@@ -162,7 +155,8 @@ class System:
         self.coeffs["ket"] = self.coeffs.index.map(lambda x: bin(x)[2:])
 
         # Pad with zeros and add one to each "bit" so, e.g., 01 becomes 12,
-        # clearedly a photon on the first path and no photon on the second path.
+        # clearedly a photon on the first path and no photon on the second
+        # path.
         self.coeffs["ket"] = self.coeffs["ket"].apply(
             lambda x: "".join(
                 [str(int(y) + 1) for y in list("0" * (self.N - len(x)) + x)]
@@ -217,36 +211,42 @@ class System:
         # Convert iterator to a list
         comb_list = [delimiter.join([str(k) for k in range(1, N + 1)])]
         comb_list += S + [delimiter.join(sorted(c)) for c in comb]
-        # Sort the born components
+
+        # Sort the Born components alphabetically to avoid `lexsort` warnings
+        # later on.
         comb_list = [comb_list[0]] + sorted(comb_list[1:])
 
-        mydict = {f"{k}": 0 for k in comb_list}
-        mydict[delimiter.join([str(k) for k in range(1, N + 1)])] = 1
+        # Weights of the various components. These weights correspond to the
+        # signs in front of each term in Eq. (6) of Sinha et al.
+        weights = {f"{k}": 0 for k in comb_list}
+        weights[delimiter.join([str(k) for k in range(1, N + 1)])] = 1
 
         for n in range(1, N + 1):
-            mydict[f"{n}"] -= 1
+            weights[f"{n}"] -= 1
             for m in range(1, n):
-                mydict[f"{m}{delimiter}{n}"] -= 1
-                mydict[f"{n}"] += 1
-                mydict[f"{m}"] += 1
+                weights[f"{m}{delimiter}{n}"] -= 1
+                weights[f"{n}"] += 1
+                weights[f"{m}"] += 1
 
-        df = pd.DataFrame(index=mydict.keys())
+        df = pd.DataFrame(index=weights.keys())
+
+        # Binary representation of the cleared paths.
         df["cleared"] = df.index.map(
             lambda x: "".join(
                 ["1" if str(j) in x else "0" for j in range(1, N + 1)]
             )
         )
-        df["weight"] = df.index.map(lambda x: mydict[x])
+        df["weight"] = df.index.map(lambda x: weights[x])
         df["prior"] = df.index.map(lambda x: len(x.split(delimiter)) / N)
 
         # Add the outcome probabilities and the density matrices for each
         # combination.
-        df[[n for n in range(1, N + 1)]] = np.nan
-        df["rho"] = pd.Series(None, dtype=object)
+        # df[[n for n in range(1, N + 1)]] = np.nan
+        # df["rho"] = pd.Series(None, dtype=object)
 
         return df
 
-    def prep_report(self):
+    def prep_report(self, bombs):
         components = self.combis.index
 
         rangeN = list(range(1, self.N + 1))
@@ -292,7 +292,7 @@ class System:
         df = pd.DataFrame(columns=columns, index=index)
 
         df[("actual", "rho", None)] = df.apply(
-            lambda x: self.bombs[x.name[0]][x.name[1]], axis=1
+            lambda x: bombs[x.name[0]][x.name[1]], axis=1
         )
         df[("actual", "purity", None)] = df[("actual", "rho", None)].apply(
             lambda x: qi.purity(x)
@@ -333,13 +333,12 @@ class System:
                     # Sinha et al.
                     if ci > 0:
                         reconstructed_rho[outcome][bomb] -= (
-                            system.bombs[outcome][bomb]
+                            system.report.loc[
+                                (outcome, bomb), ("actual", "rho", None)
+                            ]
                             * self.combis.at[c, "weight"]
                             * self.combis.at[c, "prior"]
                         )
-
-            # TODO: Delete
-            self.combis.at[c, "rho"] = system.bombs
 
         # Check the Born decomposition as per Sinha et al.
         epsilon = self.combis[range(1, N + 1)].mul(
@@ -358,21 +357,30 @@ class System:
                 #     print('>>', outcome, bomb)
                 #     print(reconstructed_rho[outcome][bomb])
 
+        # For each decomposition,
         for c in self.combis.index[1:]:
+            # compute the density matrix of the pre-measurement state,
             self.report[("actual", "rho", c)] = self.report.apply(
-                lambda x: self.combis.at[c, "rho"][x.name[0]][x.name[1]],
+                lambda x: system.report.loc[
+                    (x.name[0], x.name[1]), ("actual", "rho", None)
+                ],
                 axis=1,
             )
+            # its corresponding purity,
             self.report[("actual", "purity", c)] = self.report.apply(
                 lambda x: qi.purity(
-                    self.combis.at[c, "rho"][x.name[0]][x.name[1]]
+                    system.report.loc[
+                        (x.name[0], x.name[1]), ("actual", "rho", None)
+                    ]
                 ),
                 axis=1,
             )
+            # as well as its coefficient. See Eq. (6) of Sinha et al.
             self.report[("born", "weight", c)] = (
                 self.combis.at[c, "weight"] * self.combis.at[c, "prior"]
             )
 
+        # TODO: Use a dot product instead of the nested loop above
         self.report[("born", "rho", None)] = self.report.apply(
             lambda x: reconstructed_rho[x.name[0]][x.name[1]],
             axis=1,
@@ -389,198 +397,102 @@ class System:
             axis=1,
         )
 
-        return reconstructed_rho
-
-    # @staticmethod
-    def decompose_linear_old(self, delimiter=DELIMITER):
-        decomposed_rho = self.combis.rho.to_dict()
-        N = self.N
-
-        weights = {
-            outcome: {bomb: None for bomb in range(1, N + 1)}
-            for outcome in range(1, N + 1)
-        }
-
-        for outcome in range(1, N + 1):
-            for bomb in range(1, N + 1):
-                # Decomposition of the bomb
-                rho = {
-                    k: decomposed_rho[k][outcome][bomb]
-                    for k in decomposed_rho.keys()
-                }
-
-                # Pop and save the overall state with all paths cleared.
-                rho_all = rho.pop(
-                    delimiter.join([str(j) for j in range(1, N + 1)])
-                )
-
-                # TODO: Try different combinations
-                # Pop one more?
-                # TODO: Remove False
-                if N > 3:
-                    thelist = list(range(1, N + 1))
-                    # [rho.pop(str(x)) for x in thelist]
-                    # rho.pop('12')
-
-                # The density matrices of the undisturbed paths are redundant.
-                # Remove all but one by setting them to zero.
-                cleared_paths = [k for k in rho.keys() if str(bomb) not in k]
-                if len(cleared_paths) > 0:
-                    for k in cleared_paths[:-1]:
-                        rho[k] = np.zeros((2, 2))
-
-                vectors = {k: v.reshape(-1, 1) for k, v in rho.items()}
-
-                # Stack the vectors horizontally
-                vectors_keys = sorted(vectors.keys())
-
-                # Return the least-squares solution.
-                matrix = np.hstack([vectors[k] for k in vectors_keys])
-
-                x, residuals, rank, s = np.linalg.lstsq(
-                    matrix, rho_all.reshape(-1, 1), rcond=None
-                )
-
-                # from scipy import linalg
-                # x, residuals, rank, s = linalg.lstsq(
-                #     matrix, rho_all.reshape(-1, 1)
-                # )
-
-                # TODO: Round, and examine visually the decompositions. E.g.,
-                # parity, etc.
-                x = {
-                    j: qi.trim_imaginary(x[i][0])
-                    for i, j in enumerate(vectors_keys)
-                }
-                x["residuals"] = residuals
-
-                if len(cleared_paths) > 0:
-                    for k in cleared_paths[:-1]:
-                        x[k] = 0
-
-                weights[outcome][bomb] = x
-
-        decomposition_linear = {
-            outcome: pd.DataFrame(weights[outcome])
-            for outcome in weights.keys()
-        }
-
-        reconstruction_linear = {
-            outcome: {
-                bomb: np.sum(
-                    [
-                        decomposed_rho[k][outcome][bomb] * v
-                        for k, v in decomposition_linear[outcome][bomb][
-                            :-1
-                        ].items()
-                    ],
-                    dtype=complex,
-                    axis=0,
-                )
-                for bomb in range(1, N + 1)
-            }
-            for outcome in range(1, N + 1)
-        }
-
-        for outcome in range(1, N + 1):
-            for bomb in range(1, N + 1):
-                assert qi.is_density_matrix(
-                    reconstruction_linear[outcome][bomb]
-                ), f"outcome {outcome}, bomb {bomb}:\n{reconstruction_linear[outcome][bomb]}"
-
-                # if not qi.is_density_matrix(reconstruction_linear[outcome][bomb]):
-                #     print(outcome, bomb)
-
-        return decomposition_linear, reconstruction_linear
-
-    # Consider doing the linear regression over all the bombs and outcomes at
-    # once, and not just per bomb-outcome.
+    # TODO: Consider doing the linear regression over all the bombs and
+    # outcomes at once, and not just per bomb-outcome.
     def decompose_linear(self, delimiter=DELIMITER):
-        decomposition_linear = None
-        reconstruction_linear = None
-
+        # Reshape the matrices as vectors
         matrix = self.report.actual.rho.map(lambda x: x.reshape(-1, 1))
-        matrix = matrix.apply(
-            lambda x: np.hstack([x[k] for k in matrix.columns[1:]]), axis=1
+        decompositions = matrix.columns[1:]
+        print(decompositions)
+
+        # TODO: Drop some terms
+        # if self.N > 3:
+        #     decompositions = matrix.columns[1:]
+        # else:
+        #     decompositions = matrix.columns[1:]
+
+        self.report.loc[:, ("linear", "weight")] = 0
+        matrix["Vecs"] = matrix.apply(
+            lambda x: np.hstack([x[k] for k in decompositions]), axis=1
+        )
+        matrix.drop(decompositions, axis=1, inplace=True)
+        # matrix['res'] = matrix.apply(lambda x: x[np.nan], axis=1)
+        # x[np.nan] represents the actual rho
+        matrix["res"] = matrix.apply(
+            lambda x: np.linalg.lstsq(
+                x["Vecs"], x[np.nan].reshape(-1, 1), rcond=None
+            ),
+            axis=1,
+        )
+        self.matrix = matrix
+        for i, col in enumerate(decompositions):
+            self.report.loc[:, ("linear", "weight", col)] = matrix[
+                "res"
+            ].apply(
+                lambda x: qi.trim_imaginary(x[0][i][0])
+            )  # x[0][c]
+
+        self.report.loc[:, ("linear", "residuals", None)] = matrix[
+            "res"
+        ].apply(lambda x: x[0][1])
+
+        self.report.loc[:, ("linear", "rho", slice(None))] = self.report.apply(
+            lambda x: (
+                x[("actual", "rho")][decompositions]
+                @ x[("linear", "weight")][decompositions]
+            ),
+            axis=1,
         )
 
-        # x, residuals, rank, s = np.linalg.lstsq(
-        #     matrix, self.report.reshape(-1, 1), rcond=None
-        # )
+        self.report.loc[:, ("linear", "rho", slice(None))] = self.report.loc[
+            :, ("linear", "rho", slice(None))
+        ].apply(lambda x: x.values.item(), axis=1)
 
-        return decomposition_linear, matrix
+        self.report[("linear", "purity", None)] = self.report[
+            ("linear", "rho", None)
+        ].apply(lambda x: qi.purity(x) if qi.is_density_matrix(x) else np.nan)
+        self.report[("linear", "fidelity", None)] = self.report.apply(
+            lambda x: qi.fidelity(
+                x[("actual", "rho", None)], x[("linear", "rho", None)]
+            )
+            if qi.is_density_matrix(x[("linear", "rho", None)])
+            else np.nan,
+            axis=1,
+        )
+
+
+# %% Temporary
+
+
+def check_with_old(report, reconstruction_linear):
+    for o, b in report.index:
+        print(
+            np.allclose(
+                report.loc[(o, b), ("linear", "rho")].values.item(),
+                reconstruction_linear[o][b],
+            )
+        )
+        print(
+            (
+                report.loc[(o, b), ("linear", "rho")].values.item()
+                - reconstruction_linear[o][b]
+            ).sum()
+        )
+        print(
+            (
+                report.loc[(o, b), ("linear", "rho")].values.item()
+                - report.loc[(o, b), ("linear", "rho")].values.item()
+            ).sum()
+        )
 
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
     # Try all ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100
-    bomb_config = "⅓t½"
+    bomb_config = "⅓t½"  # ⅓t½½ ⅓t½
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
+    system.decompose_born()
+    system.decompose_linear()
     report = system.report
-    # print(report.actual)
-    dtypes = report.dtypes
-    actual = report.actual
-    bombs = system.bombs
-    reconstructed_Born = system.decompose_born()
-    combis = system.combis
-    decomposition_linear, reconstruction_linear = system.decompose_linear()
-    epsilon = system.combis[range(1, system.N + 1)].mul(
-        system.combis["weight"] * system.combis["prior"], axis=0
-    )
-    # report = report.T
-
-
-# %%
-
-decomposition_linear_bu = decomposition_linear
-reconstruction_linear_bu = reconstruction_linear.copy()
-
-# TODO: Replace report by self.report
-# Reshape the matrices as vectors
-matrix = report.actual.rho.map(lambda x: x.reshape(-1, 1))
-decompositions = matrix.columns[1:]
-matrix["Vecs"] = matrix.apply(
-    lambda x: np.hstack([x[k] for k in decompositions]), axis=1
-)
-matrix.drop(decompositions, axis=1, inplace=True)
-# matrix['res'] = matrix.apply(lambda x: x[np.nan], axis=1)
-matrix["res"] = matrix.apply(
-    lambda x: np.linalg.lstsq(x["Vecs"], x[np.nan].reshape(-1, 1), rcond=None),
-    axis=1,
-)
-
-for i, col in enumerate(report.linear.weight.columns):
-    report.loc[:, ("linear", "weight", col)] = matrix["res"].apply(
-        lambda x: qi.trim_imaginary(x[0][i][0])
-    )  # x[0][c]
-
-report.loc[:, ("linear", "residuals", None)] = matrix["res"].apply(
-    lambda x: x[0][1]
-)
-
-# report.loc[:, ("linear", "rho", slice(None))] = report.apply(
-#     lambda x: (x[("actual", "rho")][1:] @ x[("linear", "weight")]), axis=1
-# )
-
-report.loc[:, ("linear", "rho", slice(None))] = report.apply(
-    lambda x: (x[("actual", "rho")][1:] @ x[("linear", "weight")]), axis=1
-)
-
-report.loc[:, ("linear", "rho", slice(None))] = report.loc[
-    :, ("linear", "rho", slice(None))
-].apply(lambda x: x.values.item(), axis=1)
-
-# A = report.loc[:, ("linear", "rho", np.nan)].iloc[3]
-
-report[("linear", "purity", None)] = report[("linear", "rho", None)].apply(
-    lambda x: qi.purity(x) if qi.is_density_matrix(x) else np.nan
-)
-report[("linear", "fidelity", None)] = report.apply(
-    lambda x: qi.fidelity(
-        x[("actual", "rho", None)], x[("linear", "rho", None)]
-    )
-    if qi.is_density_matrix(x[("linear", "rho", None)])
-    else np.nan,
-    axis=1,
-)
+    matrix = system.matrix

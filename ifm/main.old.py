@@ -324,7 +324,7 @@ class System:
                 # TODO: Remove False
                 if N > 3:
                     thelist = list(range(1, N + 1))
-                    # [rho.pop(str(x)) for x in thelist]
+                    [rho.pop(str(x)) for x in thelist]
                     # rho.pop('12')
 
                 # The density matrices of the undisturbed paths are redundant.
@@ -437,7 +437,7 @@ class System:
 
 if __name__ == "__main__":
     # Try all ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100
-    bomb_config = "½½0"
+    bomb_config = "⅓t½½"
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     output_rho = system.bombs
@@ -479,6 +479,7 @@ if __name__ == "__main__":
         decomposition_linear,
     )
 
+    print(summary.linear)
 
 # %%
 
@@ -524,6 +525,6 @@ def summary_df(components):
     return df
 
 
-summary = summary_df(combis.index.to_list())
+# summary = summary_df(combis.index.to_list())
 
-print(summary)
+# print(summary)
