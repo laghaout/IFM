@@ -339,26 +339,8 @@ class System:
                             * self.combis.at[c, "weight"]
                             * self.combis.at[c, "prior"]
                         )
+                    # assert qi.is_density_matrix(reconstructed_rho[outcome][bomb])
 
-        # Check the Born decomposition as per Sinha et al.
-        epsilon = self.combis[range(1, N + 1)].mul(
-            self.combis["weight"] * self.combis["prior"], axis=0
-        )
-        assert np.allclose(epsilon.sum(axis=0).values, np.zeros(N))
-
-        # TODO: Make sure the reconstruction is a valid density matrix.
-        for outcome in range(1, N + 1):
-            for bomb in range(1, N + 1):
-                # TODO: Replace by an assert statement.
-                pass
-                # assert qi.is_density_matrix(reconstructed_rho[outcome][bomb])
-                # if not qi.is_density_matrix(
-                #         reconstructed_rho[outcome][bomb]):
-                #     print('>>', outcome, bomb)
-                #     print(reconstructed_rho[outcome][bomb])
-
-        # For each decomposition,
-        for c in self.combis.index[1:]:
             # compute the density matrix of the pre-measurement state,
             self.report[("actual", "rho", c)] = self.report.apply(
                 lambda x: system.report.loc[
@@ -380,11 +362,18 @@ class System:
                 self.combis.at[c, "weight"] * self.combis.at[c, "prior"]
             )
 
+        # Check the decomposed Born probabilities as per Sinha et al.
+        epsilon = self.combis[range(1, N + 1)].mul(
+            self.combis["weight"] * self.combis["prior"], axis=0
+        )
+        assert np.allclose(epsilon.sum(axis=0).values, np.zeros(N))
+
         # TODO: Use a dot product instead of the nested loop above
         self.report[("born", "rho", None)] = self.report.apply(
             lambda x: reconstructed_rho[x.name[0]][x.name[1]],
             axis=1,
         )
+
         self.report[("born", "purity", None)] = self.report[
             ("born", "rho", None)
         ].apply(lambda x: qi.purity(x) if qi.is_density_matrix(x) else np.nan)
@@ -403,13 +392,16 @@ class System:
         # Reshape the matrices as vectors
         matrix = self.report.actual.rho.map(lambda x: x.reshape(-1, 1))
         decompositions = matrix.columns[1:]
-        print(decompositions)
 
         # TODO: Drop some terms
         # if self.N > 3:
         #     decompositions = matrix.columns[1:]
         # else:
         #     decompositions = matrix.columns[1:]
+
+        # self.zouz = matrix.copy()
+        # print(decompositions)
+        # print(matrix)
 
         self.report.loc[:, ("linear", "weight")] = 0
         matrix["Vecs"] = matrix.apply(
@@ -461,38 +453,63 @@ class System:
         )
 
 
-# %% Temporary
-
-
-def check_with_old(report, reconstruction_linear):
-    for o, b in report.index:
-        print(
-            np.allclose(
-                report.loc[(o, b), ("linear", "rho")].values.item(),
-                reconstruction_linear[o][b],
-            )
-        )
-        print(
-            (
-                report.loc[(o, b), ("linear", "rho")].values.item()
-                - reconstruction_linear[o][b]
-            ).sum()
-        )
-        print(
-            (
-                report.loc[(o, b), ("linear", "rho")].values.item()
-                - report.loc[(o, b), ("linear", "rho")].values.item()
-            ).sum()
-        )
-
-
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
     # Try all ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100
-    bomb_config = "⅓t½"  # ⅓t½½ ⅓t½
+    bomb_config = "⅓t½½"  # ⅓t½½ ⅓t½
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     system.decompose_born()
     system.decompose_linear()
     report = system.report
     matrix = system.matrix
+    print(report.linear.fidelity)
+
+# %% Temporary
+
+if True:
+
+    def check_with_old(
+        report=report,
+        reconstruction_linear=reconstruction_linear,
+        decomposed_rho=decomposed_rho,
+    ):
+        for o, b in report.index:
+            print(
+                np.allclose(
+                    report.loc[(o, b), ("linear", "rho")].values.item(),
+                    reconstruction_linear[o][b],
+                ),
+                "linear reconstruction",
+            )
+
+            print(
+                np.allclose(
+                    report.loc[(o, b), ("actual", "rho", None)],
+                    output_rho[o][b],
+                ),
+                "actual",
+            )
+
+            decomp = "1" + DELIMITER + "3"
+            print(
+                np.allclose(
+                    report.loc[(o, b), ("actual", "rho", decomp)],
+                    decomposed_rho[decomp][o][b],
+                ),
+                "decomposed_rho",
+            )
+            # print(
+            #     (
+            #         report.loc[(o, b), ("linear", "rho")].values.item()
+            #         - reconstruction_linear[o][b]
+            #     ).sum()
+            # )
+            # print(
+            #     (
+            #         report.loc[(o, b), ("linear", "rho")].values.item()
+            #         - report.loc[(o, b), ("linear", "rho")].values.item()
+            #     ).sum()
+            # )
+
+    check_with_old()
