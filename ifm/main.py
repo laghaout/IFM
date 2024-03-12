@@ -339,28 +339,32 @@ class System:
                             * self.combis.at[c, "weight"]
                             * self.combis.at[c, "prior"]
                         )
-                    # assert qi.is_density_matrix(reconstructed_rho[outcome][bomb])
+                        # assert qi.is_density_matrix(reconstructed_rho[outcome][bomb])
 
-            # compute the density matrix of the pre-measurement state,
-            self.report[("actual", "rho", c)] = self.report.apply(
-                lambda x: system.report.loc[
-                    (x.name[0], x.name[1]), ("actual", "rho", None)
-                ],
-                axis=1,
-            )
-            # its corresponding purity,
-            self.report[("actual", "purity", c)] = self.report.apply(
-                lambda x: qi.purity(
-                    system.report.loc[
-                        (x.name[0], x.name[1]), ("actual", "rho", None)
-                    ]
-                ),
-                axis=1,
-            )
-            # as well as its coefficient. See Eq. (6) of Sinha et al.
-            self.report[("born", "weight", c)] = (
-                self.combis.at[c, "weight"] * self.combis.at[c, "prior"]
-            )
+                        # compute the density matrix of the pre-measurement state,
+                        self.report[("actual", "rho", c)] = self.report.apply(
+                            lambda x: system.report.loc[
+                                (x.name[0], x.name[1]), ("actual", "rho", None)
+                            ],
+                            axis=1,
+                        )
+                        # its corresponding purity,
+                        self.report[
+                            ("actual", "purity", c)
+                        ] = self.report.apply(
+                            lambda x: qi.purity(
+                                system.report.loc[
+                                    (x.name[0], x.name[1]),
+                                    ("actual", "rho", None),
+                                ]
+                            ),
+                            axis=1,
+                        )
+                        # as well as its coefficient. See Eq. (6) of Sinha et al.
+                        self.report[("born", "weight", c)] = (
+                            self.combis.at[c, "weight"]
+                            * self.combis.at[c, "prior"]
+                        )
 
         # Check the decomposed Born probabilities as per Sinha et al.
         epsilon = self.combis[range(1, N + 1)].mul(
@@ -456,7 +460,7 @@ class System:
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
     # Try all ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100
-    bomb_config = "⅓t½½"  # ⅓t½½ ⅓t½
+    bomb_config = "⅓t½½0T"  # ⅓t½½ ⅓t½
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     system.decompose_born()
@@ -467,7 +471,44 @@ if __name__ == "__main__":
 
 # %% Temporary
 
-if True:
+
+def hash_matrix(matrix, encoding="utf-8", sha_round=6):
+    import hashlib
+
+    matrix = str(np.round(matrix.reshape(-1, 1), sha_round))
+
+    # Convert the string to bytes
+    input_bytes = matrix.encode(encoding)
+
+    # Create a sha256 hash object
+    hash_object = hashlib.sha256(input_bytes)
+
+    # Generate the hexadecimal representation of the SHA hash
+    sha_value = hash_object.hexdigest()
+
+    return sha_value[-sha_round:]
+
+
+actual = report.actual.rho.copy().T
+
+undisturbed = pd.DataFrame([actual.columns], columns=actual.columns)
+undisturbed.rename(index={0: "undisturbed"}, inplace=True)
+undisturbed = undisturbed.map(
+    lambda x: np.outer(system.b[x[1] - 1][1:], system.b[x[1] - 1][1:])
+)
+actual = pd.concat([undisturbed, actual], axis=0).T
+
+A = list()
+for k in range(len(report)):
+    A.append(actual.iloc[k])
+    A.append(actual.map(hash_matrix).iloc[k])
+A = pd.concat(A, axis=1)
+# A = pd.concat(
+#     [report.actual.rho.iloc[0], actual.iloc[0],
+#      report.actual.rho.iloc[1], actual.iloc[1]], axis=1)
+
+
+if False:
 
     def check_with_old(
         report=report,
