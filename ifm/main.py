@@ -460,7 +460,7 @@ class System:
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
     # Try all ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100
-    bomb_config = "⅓t½½0T"  # ⅓t½½ ⅓t½
+    bomb_config = "⅓t½"  # ⅓t½½ ⅓t½ ⅓th½0T ⅓½½
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     system.decompose_born()
@@ -497,16 +497,30 @@ undisturbed = undisturbed.map(
     lambda x: np.outer(system.b[x[1] - 1][1:], system.b[x[1] - 1][1:])
 )
 actual = pd.concat([undisturbed, actual], axis=0).T
+actual = actual.map(lambda x: x.astype("complex"))
 
 A = list()
 for k in range(len(report)):
-    A.append(actual.iloc[k])
+    # A.append(actual.iloc[k])
     A.append(actual.map(hash_matrix).iloc[k])
-A = pd.concat(A, axis=1)
+A = pd.concat(A, axis=1).T
 # A = pd.concat(
 #     [report.actual.rho.iloc[0], actual.iloc[0],
 #      report.actual.rho.iloc[1], actual.iloc[1]], axis=1)
 
+
+# A['unique'] = A.apply(lambda x: x.unique(), axis=1)
+# A['cardinality'] = A['unique'].map(lambda x: len(x))
+
+letters = [chr(i) for i in range(65, 91)]
+letters = {
+    v: (f"D{k}" if v not in A.undisturbed.loc[1].unique().tolist() else k)
+    for k, v in enumerate(set(A.melt().value))
+}
+A = A.map(lambda x: letters[x])
+
+
+# unique_elements = set(pd.melt(df)['value'].unique())
 
 if False:
 
