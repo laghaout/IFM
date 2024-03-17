@@ -398,14 +398,15 @@ def reconstruct_disturbed(N, final, undisturbed, k=2):
     return np.round(rho_k, DEC)
 
 
-def plot_Wigner(bombs, system, ROUND=4):
+def plot_Wigner(system, ROUND=4):
+    bombs = system.report.actual[np.nan].to_dict()
     xvec = np.linspace(-5, 5, 200)
     # rho_coherent = qt.coherent_dm(N, np.sqrt(2))
     for o in bombs.keys():
-        rho_bombs = {b: qt.Qobj(bombs[o][b]) for b in bombs[o].keys()}
+        rho_bombs = {b: qt.Qobj(bombs[(o, b)]) for b in bombs[(o,)].keys()}
 
         wigner_bombs = {
-            b: qt.wigner(rho_bombs[b], xvec, xvec) for b in bombs[o].keys()
+            b: qt.wigner(rho_bombs[b], xvec, xvec) for b in bombs[(o,)].keys()
         }
 
         # Plot the results

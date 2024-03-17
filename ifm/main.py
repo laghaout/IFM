@@ -297,6 +297,12 @@ class System:
         df[("actual", "purity", None)] = df[("actual", "rho", None)].apply(
             lambda x: qi.purity(x)
         )
+        df[("undisturbed")] = df.apply(
+            lambda x: np.outer(
+                self.b[x.name[1] - 1][1:], self.b[x.name[1] - 1][1:]
+            ),
+            axis=1,
+        )
 
         return df
 
@@ -361,7 +367,7 @@ class System:
                             axis=1,
                         )
                         # as well as its coefficient. See Eq. (6) of Sinha et al.
-                        self.report[("born", "weight", c)] = (
+                        self.report[("born", "weight", c)] = -(
                             self.combis.at[c, "weight"]
                             * self.combis.at[c, "prior"]
                         )
@@ -420,6 +426,7 @@ class System:
             ),
             axis=1,
         )
+        print(matrix["Vecs"].iloc[0].shape)
         self.matrix = matrix
         for i, col in enumerate(decompositions):
             self.report.loc[:, ("linear", "weight", col)] = matrix[
@@ -460,7 +467,7 @@ class System:
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
     # Try all ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100
-    bomb_config = "⅓t½"  # ⅓t½½ ⅓t½ ⅓th½0T ⅓½½
+    bomb_config = "½h⅓"  # ⅓t½½ ⅓t½ ⅓th½0T ⅓½½
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     system.decompose_born()
@@ -471,53 +478,52 @@ if __name__ == "__main__":
 
 # %% Temporary
 
+if False:
 
-def hash_matrix(matrix, encoding="utf-8", sha_round=6):
-    import hashlib
+    def hash_matrix(matrix, encoding="utf-8", sha_round=6):
+        import hashlib
 
-    matrix = str(np.round(matrix.reshape(-1, 1), sha_round))
+        matrix = str(np.round(matrix.reshape(-1, 1), sha_round))
 
-    # Convert the string to bytes
-    input_bytes = matrix.encode(encoding)
+        # Convert the string to bytes
+        input_bytes = matrix.encode(encoding)
 
-    # Create a sha256 hash object
-    hash_object = hashlib.sha256(input_bytes)
+        # Create a sha256 hash object
+        hash_object = hashlib.sha256(input_bytes)
 
-    # Generate the hexadecimal representation of the SHA hash
-    sha_value = hash_object.hexdigest()
+        # Generate the hexadecimal representation of the SHA hash
+        sha_value = hash_object.hexdigest()
 
-    return sha_value[-sha_round:]
+        return sha_value[-sha_round:]
 
+    actual = report.actual.rho.copy().T
 
-actual = report.actual.rho.copy().T
+    undisturbed = pd.DataFrame([actual.columns], columns=actual.columns)
+    undisturbed.rename(index={0: "undisturbed"}, inplace=True)
+    undisturbed = undisturbed.map(
+        lambda x: np.outer(system.b[x[1] - 1][1:], system.b[x[1] - 1][1:])
+    )
+    actual = pd.concat([undisturbed, actual], axis=0).T
+    actual = actual.map(lambda x: x.astype("complex"))
 
-undisturbed = pd.DataFrame([actual.columns], columns=actual.columns)
-undisturbed.rename(index={0: "undisturbed"}, inplace=True)
-undisturbed = undisturbed.map(
-    lambda x: np.outer(system.b[x[1] - 1][1:], system.b[x[1] - 1][1:])
-)
-actual = pd.concat([undisturbed, actual], axis=0).T
-actual = actual.map(lambda x: x.astype("complex"))
+    A = list()
+    for k in range(len(report)):
+        # A.append(actual.iloc[k])
+        A.append(actual.map(hash_matrix).iloc[k])
+    A = pd.concat(A, axis=1).T
+    # A = pd.concat(
+    #     [report.actual.rho.iloc[0], actual.iloc[0],
+    #      report.actual.rho.iloc[1], actual.iloc[1]], axis=1)
 
-A = list()
-for k in range(len(report)):
-    # A.append(actual.iloc[k])
-    A.append(actual.map(hash_matrix).iloc[k])
-A = pd.concat(A, axis=1).T
-# A = pd.concat(
-#     [report.actual.rho.iloc[0], actual.iloc[0],
-#      report.actual.rho.iloc[1], actual.iloc[1]], axis=1)
+    # A['unique'] = A.apply(lambda x: x.unique(), axis=1)
+    # A['cardinality'] = A['unique'].map(lambda x: len(x))
 
-
-# A['unique'] = A.apply(lambda x: x.unique(), axis=1)
-# A['cardinality'] = A['unique'].map(lambda x: len(x))
-
-letters = [chr(i) for i in range(65, 91)]
-letters = {
-    v: (f"D{k}" if v not in A.undisturbed.loc[1].unique().tolist() else k)
-    for k, v in enumerate(set(A.melt().value))
-}
-A = A.map(lambda x: letters[x])
+    letters = [chr(i) for i in range(65, 91)]
+    letters = {
+        v: (f"D{k}" if v not in A.undisturbed.loc[1].unique().tolist() else k)
+        for k, v in enumerate(set(A.melt().value))
+    }
+    A = A.map(lambda x: letters[x])
 
 
 # unique_elements = set(pd.melt(df)['value'].unique())
@@ -568,3 +574,14 @@ if False:
             # )
 
     check_with_old()
+
+# %%
+
+A = (
+    report.actual.rho[["1·2", "1·3", "2·3"]].sum(axis=1) / 6
+    - report.actual.rho[["1", "2", "3"]].sum(axis=1) / 6
+)
+A.map(qi.is_density_matrix)
+P = A.map(qi.purity)
+print(P)
+print(report.actual.purity[np.nan])
