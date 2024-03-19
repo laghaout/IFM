@@ -247,7 +247,7 @@ class System:
         return df
 
     def prep_report(self, bombs):
-        components = self.combis.index
+        components = ["initial"] + self.combis.index[1:].to_list()
 
         rangeN = list(range(1, self.N + 1))
         index = pd.MultiIndex.from_product(
@@ -256,53 +256,53 @@ class System:
 
         columns = (
             [
-                (
-                    "actual",
-                    "rho",
-                ),
-                (
-                    "actual",
-                    "purity",
-                ),
+                ("actual", "rho", "initial"),
+                ("actual", "purity", "initial"),
+                ("actual", "rho", "final"),
+                ("actual", "purity", "final"),
             ]
             + [("actual", "rho", c) for c in components[1:]]
             + [("actual", "purity", c) for c in components[1:]]
         )
         for reconstruction in ("born", "linear"):
-            columns += (
-                [
-                    (
-                        reconstruction,
-                        "rho",
-                    ),
-                    (
-                        reconstruction,
-                        "purity",
-                    ),
-                    (
-                        reconstruction,
-                        "fidelity",
-                    ),
-                ]
-                + [(reconstruction, "weight", c) for c in components[1:]]
-                + [(reconstruction, "residuals")]
-            )
+            columns += [
+                (
+                    reconstruction,
+                    "rho",
+                ),
+                (
+                    reconstruction,
+                    "purity",
+                ),
+                (
+                    reconstruction,
+                    "fidelity",
+                ),
+            ] + [(reconstruction, "weight", c) for c in components]
+        columns += [
+            ("linear", "residuals"),
+            ("linear", "rank"),
+            ("linear", "singular_values"),
+        ]
         columns = pd.MultiIndex.from_tuples(columns)
 
         df = pd.DataFrame(columns=columns, index=index)
 
-        df[("actual", "rho", None)] = df.apply(
+        df[("actual", "rho", "final")] = df.apply(
             lambda x: bombs[x.name[0]][x.name[1]], axis=1
         )
-        df[("actual", "purity", None)] = df[("actual", "rho", None)].apply(
-            lambda x: qi.purity(x)
-        )
-        df[("undisturbed")] = df.apply(
+        df[("actual", "purity", "final")] = df[
+            ("actual", "rho", "final")
+        ].apply(lambda x: qi.purity(x))
+        df[("actual", "rho", "initial")] = df.apply(
             lambda x: np.outer(
-                self.b[x.name[1] - 1][1:], self.b[x.name[1] - 1][1:]
+                self.b[x.name[1] - 1][1:], np.conj(self.b[x.name[1] - 1][1:])
             ),
             axis=1,
         )
+        df[("actual", "purity", "initial")] = df[
+            ("actual", "rho", "initial")
+        ].apply(lambda x: qi.purity(x))
 
         return df
 
@@ -340,7 +340,7 @@ class System:
                     if ci > 0:
                         reconstructed_rho[outcome][bomb] -= (
                             system.report.loc[
-                                (outcome, bomb), ("actual", "rho", None)
+                                (outcome, bomb), ("actual", "rho", "final")
                             ]
                             * self.combis.at[c, "weight"]
                             * self.combis.at[c, "prior"]
@@ -350,7 +350,8 @@ class System:
                         # compute the density matrix of the pre-measurement state,
                         self.report[("actual", "rho", c)] = self.report.apply(
                             lambda x: system.report.loc[
-                                (x.name[0], x.name[1]), ("actual", "rho", None)
+                                (x.name[0], x.name[1]),
+                                ("actual", "rho", "final"),
                             ],
                             axis=1,
                         )
@@ -361,7 +362,7 @@ class System:
                             lambda x: qi.purity(
                                 system.report.loc[
                                     (x.name[0], x.name[1]),
-                                    ("actual", "rho", None),
+                                    ("actual", "rho", "final"),
                                 ]
                             ),
                             axis=1,
@@ -389,7 +390,7 @@ class System:
         ].apply(lambda x: qi.purity(x) if qi.is_density_matrix(x) else np.nan)
         self.report[("born", "fidelity", None)] = self.report.apply(
             lambda x: qi.fidelity(
-                x[("born", "rho", None)], x[("actual", "rho", None)]
+                x[("born", "rho", None)], x[("actual", "rho", "final")]
             )
             if qi.is_density_matrix(x[("born", "rho", None)])
             else np.nan,
@@ -401,43 +402,39 @@ class System:
     def decompose_linear(self, delimiter=DELIMITER):
         # Reshape the matrices as vectors
         matrix = self.report.actual.rho.map(lambda x: x.reshape(-1, 1))
-        decompositions = matrix.columns[1:]
+        decompositions = self.report.linear.weight.columns
 
-        # TODO: Drop some terms
-        # if self.N > 3:
-        #     decompositions = matrix.columns[1:]
-        # else:
-        #     decompositions = matrix.columns[1:]
-
-        # self.zouz = matrix.copy()
-        # print(decompositions)
-        # print(matrix)
-
-        self.report.loc[:, ("linear", "weight")] = 0
         matrix["Vecs"] = matrix.apply(
             lambda x: np.hstack([x[k] for k in decompositions]), axis=1
         )
         matrix.drop(decompositions, axis=1, inplace=True)
         # matrix['res'] = matrix.apply(lambda x: x[np.nan], axis=1)
         # x[np.nan] represents the actual rho
-        matrix["res"] = matrix.apply(
+        matrix["results"] = matrix.apply(
             lambda x: np.linalg.lstsq(
-                x["Vecs"], x[np.nan].reshape(-1, 1), rcond=None
+                x["Vecs"], x["final"].reshape(-1, 1), rcond=None
             ),
             axis=1,
         )
-        print(matrix["Vecs"].iloc[0].shape)
         self.matrix = matrix
+        # For each component,
         for i, col in enumerate(decompositions):
+            # save the coefficients.
             self.report.loc[:, ("linear", "weight", col)] = matrix[
-                "res"
+                "results"
             ].apply(
                 lambda x: qi.trim_imaginary(x[0][i][0])
             )  # x[0][c]
 
         self.report.loc[:, ("linear", "residuals", None)] = matrix[
-            "res"
-        ].apply(lambda x: x[0][1])
+            "results"
+        ].apply(lambda x: x[1])
+        self.report.loc[:, ("linear", "rank", None)] = matrix["results"].apply(
+            lambda x: x[2]
+        )
+        self.report.loc[:, ("linear", "singular_values", None)] = matrix[
+            "results"
+        ].apply(lambda x: x[3])
 
         self.report.loc[:, ("linear", "rho", slice(None))] = self.report.apply(
             lambda x: (
@@ -456,25 +453,29 @@ class System:
         ].apply(lambda x: qi.purity(x) if qi.is_density_matrix(x) else np.nan)
         self.report[("linear", "fidelity", None)] = self.report.apply(
             lambda x: qi.fidelity(
-                x[("actual", "rho", None)], x[("linear", "rho", None)]
+                x[("actual", "rho", "final")], x[("linear", "rho", None)]
             )
             if qi.is_density_matrix(x[("linear", "rho", None)])
             else np.nan,
             axis=1,
         )
 
+        # assert abs(self.report.linear.fidelity.sum().sum() - len(self.report)) < qi.TOL, \
+        #     "Linear combination failed: Fidelity with the output state < 1."
+
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
-    # Try all ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100
-    bomb_config = "½h⅓"  # ⅓t½½ ⅓t½ ⅓th½0T ⅓½½
+    """
+    ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½
+    """
+    bomb_config = "½h⅓"
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     system.decompose_born()
     system.decompose_linear()
-    report = system.report
     matrix = system.matrix
-    print(report.linear.fidelity)
+    report = system.report
 
 # %% Temporary
 
@@ -577,11 +578,9 @@ if False:
 
 # %%
 
-A = (
-    report.actual.rho[["1·2", "1·3", "2·3"]].sum(axis=1) / 6
-    - report.actual.rho[["1", "2", "3"]].sum(axis=1) / 6
-)
-A.map(qi.is_density_matrix)
-P = A.map(qi.purity)
-print(P)
-print(report.actual.purity[np.nan])
+v = np.vstack(matrix.final.loc[:, 2])
+X = np.vstack(matrix.Vecs.loc[:, 2])
+A = np.linalg.lstsq(X, v, rcond=None)
+for k in A[0]:
+    print(np.round(qi.trim_imaginary(k)[0], ROUND))
+print(A[1])
