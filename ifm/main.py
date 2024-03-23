@@ -469,7 +469,7 @@ if __name__ == "__main__":
     """
     ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½
     """
-    bomb_config = "½h⅓"
+    bomb_config = "½⅔⅓"
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     system.decompose_born()
@@ -478,6 +478,85 @@ if __name__ == "__main__":
     report = system.report
 
 # %% Temporary
+
+
+def foo_Born(x):
+    combis = system.combis.index[1:]
+    weights = report.born.weight[combis].loc[x.name]
+    purities = x[combis].to_list()
+
+    return purities @ weights
+
+
+def foo_p58(x):
+    from math import comb
+
+    N = system.N
+    C = comb(N, 2)
+
+    disturbed = [j for j in x.index if str(x.name[1]) in j and DELIMITER in j]
+    disturbed = np.sum([x[k] for k in disturbed])
+
+    undisturbed = [
+        j for j in x.index if str(x.name[1]) not in j and DELIMITER in j
+    ]
+    undisturbed = np.sum([x[k] for k in undisturbed])
+    # undisturbed = (C - N + 1)*x['initial']
+
+    return (disturbed + undisturbed) / C
+
+
+def foo(N, u, d):
+    from math import comb
+
+    C = comb(N, 2)
+    return (C * d + (N - 1 - C) * u) / (N - 1)
+
+
+A = report.actual.purity
+A["Born"] = A.apply(foo_Born, axis=1)
+A["p58"] = A.apply(foo_p58, axis=1)
+
+# print(A[['final', 'p58', 'Born']])
+
+from scipy.optimize import minimize
+
+X = A[system.combis.index[1:]]  # .iloc[:17]
+y = A["final"]
+
+
+def objective(x):
+    return np.sum((X.dot(x) - y) ** 2)
+
+
+# Constraints
+cons = {"type": "eq", "fun": lambda x: np.sum(x) - 1}  # Sum to unity
+bounds = [(0, 1)] * X.shape[1]  # Probability constraints for each element of x
+
+# Initial guess
+x0 = np.random.rand(X.shape[1])
+x0 /= np.sum(x0)  # Normalize to satisfy the sum to unity constraint initially
+
+# Solve the constrained optimization problem
+result = minimize(objective, x0, bounds=bounds, constraints=cons)
+
+if result.success:
+    print("Optimal solution found:", result.x)
+else:
+    print("Optimization failed.")
+
+
+def foo_convex(x):
+    combis = system.combis.index[1:]
+    weights = result.x
+    purities = x[combis].to_list()
+
+    return purities @ weights
+
+
+A["convex"] = A.apply(foo_convex, axis=1)
+
+print(A[["final", "convex", "p58", "Born"]])
 
 if False:
 
@@ -526,10 +605,7 @@ if False:
     }
     A = A.map(lambda x: letters[x])
 
-
-# unique_elements = set(pd.melt(df)['value'].unique())
-
-if False:
+elif False:
 
     def check_with_old(
         report=report,
@@ -575,12 +651,3 @@ if False:
             # )
 
     check_with_old()
-
-# %%
-
-v = np.vstack(matrix.final.loc[:, 2])
-X = np.vstack(matrix.Vecs.loc[:, 2])
-A = np.linalg.lstsq(X, v, rcond=None)
-for k in A[0]:
-    print(np.round(qi.trim_imaginary(k)[0], ROUND))
-print(A[1])
