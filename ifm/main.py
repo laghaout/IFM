@@ -11,6 +11,7 @@ and away from the path.
 
 import numpy as np
 import pandas as pd
+from pprint import pprint
 import quantum_information as qi
 
 from itertools import combinations
@@ -467,9 +468,9 @@ class System:
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
     """
-    ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½
+    ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½ ⅔½½
     """
-    bomb_config = "½⅔⅓"
+    bomb_config = "0⅔⅓"
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     system.decompose_born()
@@ -477,177 +478,69 @@ if __name__ == "__main__":
     matrix = system.matrix
     report = system.report
 
-# %% Temporary
+df = report.copy()
+df.index = df.index.swaplevel(0, 1)
+df.sort_index(axis=0, level=0, inplace=True)
+
+# %%
 
 
-def foo_Born(x):
-    combis = system.combis.index[1:]
-    weights = report.born.weight[combis].loc[x.name]
-    purities = x[combis].to_list()
-
-    return purities @ weights
+import numpy as np
+import matplotlib.pyplot as plt
+import qutip as qt
+import qutip.visualization as qtv
 
 
-def foo_p58(x):
-    from math import comb
+def plot_report(report=report):
+    N = int(np.sqrt(report.actual.rho.final.shape[0]))
 
-    N = system.N
-    C = comb(N, 2)
+    def rho(outcome, bomb, time="final"):
+        return qt.Qobj(report.actual.rho[time].loc[(outcome, bomb)])
 
-    disturbed = [j for j in x.index if str(x.name[1]) in j and DELIMITER in j]
-    disturbed = np.sum([x[k] for k in disturbed])
+    fig, axes = plt.subplots(N, N + 1, figsize=(12, 3 * N))
 
-    undisturbed = [
-        j for j in x.index if str(x.name[1]) not in j and DELIMITER in j
-    ]
-    undisturbed = np.sum([x[k] for k in undisturbed])
-    # undisturbed = (C - N + 1)*x['initial']
+    for b in range(1, N + 1):
+        purity = qi.purity(report.actual.rho["initial"].loc[(1, b)])
+        qtv.plot_fock_distribution(
+            rho(1, b, "initial"),
+            fig=fig,
+            ax=axes[b - 1, 0],
+            title=f"{np.round(purity, ROUND)}",
+        )
 
-    return (disturbed + undisturbed) / C
-
-
-def foo(N, u, d):
-    from math import comb
-
-    C = comb(N, 2)
-    return (C * d + (N - 1 - C) * u) / (N - 1)
-
-
-A = report.actual.purity
-A["Born"] = A.apply(foo_Born, axis=1)
-A["p58"] = A.apply(foo_p58, axis=1)
-
-# print(A[['final', 'p58', 'Born']])
-
-from scipy.optimize import minimize
-
-X = A[system.combis.index[1:]]  # .iloc[:17]
-y = A["final"]
-
-
-def objective(x):
-    return np.sum((X.dot(x) - y) ** 2)
-
-
-# Constraints
-cons = {"type": "eq", "fun": lambda x: np.sum(x) - 1}  # Sum to unity
-bounds = [(0, 1)] * X.shape[1]  # Probability constraints for each element of x
-
-# Initial guess
-x0 = np.random.rand(X.shape[1])
-x0 /= np.sum(x0)  # Normalize to satisfy the sum to unity constraint initially
-
-# Solve the constrained optimization problem
-result = minimize(objective, x0, bounds=bounds, constraints=cons)
-
-if result.success:
-    print("Optimal solution found:", result.x)
-else:
-    print("Optimization failed.")
-
-
-def foo_convex(x):
-    combis = system.combis.index[1:]
-    weights = result.x
-    purities = x[combis].to_list()
-
-    return purities @ weights
-
-
-A["convex"] = A.apply(foo_convex, axis=1)
-
-print(A[["final", "convex", "p58", "Born"]])
-
-if False:
-
-    def hash_matrix(matrix, encoding="utf-8", sha_round=6):
-        import hashlib
-
-        matrix = str(np.round(matrix.reshape(-1, 1), sha_round))
-
-        # Convert the string to bytes
-        input_bytes = matrix.encode(encoding)
-
-        # Create a sha256 hash object
-        hash_object = hashlib.sha256(input_bytes)
-
-        # Generate the hexadecimal representation of the SHA hash
-        sha_value = hash_object.hexdigest()
-
-        return sha_value[-sha_round:]
-
-    actual = report.actual.rho.copy().T
-
-    undisturbed = pd.DataFrame([actual.columns], columns=actual.columns)
-    undisturbed.rename(index={0: "undisturbed"}, inplace=True)
-    undisturbed = undisturbed.map(
-        lambda x: np.outer(system.b[x[1] - 1][1:], system.b[x[1] - 1][1:])
-    )
-    actual = pd.concat([undisturbed, actual], axis=0).T
-    actual = actual.map(lambda x: x.astype("complex"))
-
-    A = list()
-    for k in range(len(report)):
-        # A.append(actual.iloc[k])
-        A.append(actual.map(hash_matrix).iloc[k])
-    A = pd.concat(A, axis=1).T
-    # A = pd.concat(
-    #     [report.actual.rho.iloc[0], actual.iloc[0],
-    #      report.actual.rho.iloc[1], actual.iloc[1]], axis=1)
-
-    # A['unique'] = A.apply(lambda x: x.unique(), axis=1)
-    # A['cardinality'] = A['unique'].map(lambda x: len(x))
-
-    letters = [chr(i) for i in range(65, 91)]
-    letters = {
-        v: (f"D{k}" if v not in A.undisturbed.loc[1].unique().tolist() else k)
-        for k, v in enumerate(set(A.melt().value))
-    }
-    A = A.map(lambda x: letters[x])
-
-elif False:
-
-    def check_with_old(
-        report=report,
-        reconstruction_linear=reconstruction_linear,
-        decomposed_rho=decomposed_rho,
-    ):
-        for o, b in report.index:
-            print(
-                np.allclose(
-                    report.loc[(o, b), ("linear", "rho")].values.item(),
-                    reconstruction_linear[o][b],
-                ),
-                "linear reconstruction",
+        for o in range(1, N + 1):
+            purity = qi.purity(report.actual.rho["final"].loc[(o, b)])
+            qtv.plot_fock_distribution(
+                rho(o, b, "final"),
+                fig=fig,
+                ax=axes[b - 1, o],
+                title=f"{np.round(purity, ROUND)}",
             )
+    fig.tight_layout()
+    plt.show()
 
-            print(
-                np.allclose(
-                    report.loc[(o, b), ("actual", "rho", None)],
-                    output_rho[o][b],
-                ),
-                "actual",
+    # Wigner
+    xvec = np.linspace(-5, 5, 500)
+    fig, axes = plt.subplots(N, N + 1, figsize=(12, 3 * N))
+
+    cont = []
+    lbl = []
+    for b in range(1, N + 1):
+        cont += [
+            axes[b - 1, 0].contourf(
+                xvec, xvec, qt.wigner(rho(1, b, "initial"), xvec, xvec), 100
             )
+        ]
+        lbl += [axes[b - 1, 0].set_title("Initial")]
+        for o in range(1, N + 1):
+            cont += [
+                axes[b - 1, o].contourf(
+                    xvec, xvec, qt.wigner(rho(o, b, "final"), xvec, xvec), 100
+                )
+            ]
+            lbl += [axes[b - 1, o].set_title(f"outcome {o}")]
+    fig.tight_layout()
+    plt.show()
 
-            decomp = "1" + DELIMITER + "3"
-            print(
-                np.allclose(
-                    report.loc[(o, b), ("actual", "rho", decomp)],
-                    decomposed_rho[decomp][o][b],
-                ),
-                "decomposed_rho",
-            )
-            # print(
-            #     (
-            #         report.loc[(o, b), ("linear", "rho")].values.item()
-            #         - reconstruction_linear[o][b]
-            #     ).sum()
-            # )
-            # print(
-            #     (
-            #         report.loc[(o, b), ("linear", "rho")].values.item()
-            #         - report.loc[(o, b), ("linear", "rho")].values.item()
-            #     ).sum()
-            # )
 
-    check_with_old()
+plot_report()

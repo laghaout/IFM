@@ -1,28 +1,52 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Apr  7 17:04:30 2024
+
+@author: amine
+"""
+
 import numpy as np
-from scipy.optimize import minimize
-
-# Example linear system (A and b)
-A = np.array([[1, 2], [3, 4], [5, 6]])
-b = np.array([1, 2, 3])
+import matplotlib.pyplot as plt
+import qutip as qt
+import qutip.visualization as qtv
 
 
-# Objective function: Least squares
-def objective(x):
-    return np.sum((A.dot(x) - b) ** 2)
+N = 20
+
+rho_coherent = qt.coherent_dm(N, np.sqrt(2))
+# rho_thermal = qt.thermal_dm(N, 2)
+# rho_fock = qt.fock_dm(N, 2)
+# rho_fock = qt.Qobj(np.array([[1, -1j], [1j, 1]])/2)
 
 
-# Constraints
-cons = {"type": "eq", "fun": lambda x: np.sum(x) - 1}  # Sum to unity
-bounds = [(0, 1), (0, 1)]  # Probability constraints for each element of x
+rho_thermal = report.actual.rho.final.loc[(1, 1)]
+rho_fock = report.actual.rho.final.loc[(2, 1)]
+rho_fock = report.actual.rho.final.loc[(3, 1)]
 
-# Initial guess
-x0 = np.random.rand(A.shape[1])
-x0 /= np.sum(x0)  # Normalize to satisfy the sum to unity constraint initially
 
-# Solve the constrained optimization problem
-result = minimize(objective, x0, bounds=bounds, constraints=cons)
+fig, axes = plt.subplots(1, 3, figsize=(12, 3))
+qtv.plot_fock_distribution(
+    rho_coherent, fig=fig, ax=axes[0], title="Coherent state"
+)
+qtv.plot_fock_distribution(
+    rho_thermal, fig=fig, ax=axes[1], title="Thermal state"
+)
+qtv.plot_fock_distribution(rho_fock, fig=fig, ax=axes[2], title="Fock state")
+fig.tight_layout()
+plt.show()
 
-if result.success:
-    print("Optimal solution found:", result.x)
-else:
-    print("Optimization failed.")
+
+xvec = np.linspace(-5, 5, 500)
+W_coherent = qt.wigner(rho_coherent, xvec, xvec)
+W_thermal = qt.wigner(rho_thermal, xvec, xvec)
+W_fock = qt.wigner(rho_fock, xvec, xvec)
+
+# plot the results
+fig, axes = plt.subplots(1, 3, figsize=(12, 3))
+cont0 = axes[0].contourf(xvec, xvec, W_coherent, 100)
+lbl0 = axes[0].set_title("Coherent state")
+cont1 = axes[1].contourf(xvec, xvec, W_thermal, 100)
+lbl1 = axes[1].set_title("Thermal state")
+cont0 = axes[2].contourf(xvec, xvec, W_fock, 100)
+lbl2 = axes[2].set_title("Fock state")
+plt.show()
