@@ -470,7 +470,7 @@ if __name__ == "__main__":
     """
     ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½ ⅔½½
     """
-    bomb_config = "0⅔⅓"
+    bomb_config = "½⅔⅓"
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     system.decompose_born()
@@ -488,39 +488,66 @@ df.sort_index(axis=0, level=0, inplace=True)
 import numpy as np
 import matplotlib.pyplot as plt
 import qutip as qt
+import seaborn as sns
 import qutip.visualization as qtv
 
 
-def plot_report(report=report):
-    N = int(np.sqrt(report.actual.rho.final.shape[0]))
+def rho(outcome, bomb, config="final", return_type="qutip"):
+    if return_type == "qutip":
+        return qt.Qobj(report.actual.rho[config].loc[(outcome, bomb)])
+    else:
+        report.actual.rho[config].loc[(outcome, bomb)]
 
-    def rho(outcome, bomb, time="final"):
-        return qt.Qobj(report.actual.rho[time].loc[(outcome, bomb)])
+
+def plot_report(report=report, resolution=200):
+    N = int(np.sqrt(report.actual.rho.final.shape[0]))
 
     fig, axes = plt.subplots(N, N + 1, figsize=(12, 3 * N))
 
+    # For each bomb,
     for b in range(1, N + 1):
+        # compute the purity and plot the Fock diagonal for the initial state,
         purity = qi.purity(report.actual.rho["initial"].loc[(1, b)])
         qtv.plot_fock_distribution(
             rho(1, b, "initial"),
             fig=fig,
             ax=axes[b - 1, 0],
-            title=f"{np.round(purity, ROUND)}",
+            # title=f"initial (purity = {np.round(purity, ROUND)})",
         )
+        if b == N:
+            axes[b - 1, 0].set_xlabel("Fock diagonal")
+        else:
+            axes[b - 1, 0].set_xlabel(None)
+        axes[b - 1, 0].set_ylabel(f"bomb {b}")
+        axes[b - 1, 0].set_title(
+            f"a\\initial (purity = {np.round(purity, ROUND)})"
+        )
+        axes[b - 1, 0].set_xticks(np.arange(-1, 3, 1))
+        axes[b - 1, 0].set_xlim([-0.5, 1.5])
 
+        # as well as for all the possible outcomes.
         for o in range(1, N + 1):
             purity = qi.purity(report.actual.rho["final"].loc[(o, b)])
             qtv.plot_fock_distribution(
                 rho(o, b, "final"),
                 fig=fig,
                 ax=axes[b - 1, o],
-                title=f"{np.round(purity, ROUND)}",
+                # title=f"(purity = {np.round(purity, ROUND)})",
             )
+            if b == N:
+                axes[b - 1, o].set_xlabel("Fock diagonal")
+            else:
+                axes[b - 1, o].set_xlabel(None)
+            axes[b - 1, o].set_ylabel(f"bomb {b}")
+            axes[b - 1, o].set_title(f"(purity = {np.round(purity, ROUND)})")
+            axes[b - 1, o].set_xticks(np.arange(-1, 3, 1))
+            axes[b - 1, o].set_xlim([-0.5, 1.5])
+
     fig.tight_layout()
     plt.show()
 
     # Wigner
-    xvec = np.linspace(-5, 5, 500)
+    xvec = np.linspace(-5, 5, 200)
     fig, axes = plt.subplots(N, N + 1, figsize=(12, 3 * N))
 
     cont = []
@@ -539,6 +566,7 @@ def plot_report(report=report):
                 )
             ]
             lbl += [axes[b - 1, o].set_title(f"outcome {o}")]
+
     fig.tight_layout()
     plt.show()
 
