@@ -470,7 +470,7 @@ if __name__ == "__main__":
     """
     ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½ ⅔½½
     """
-    bomb_config = "½⅔⅓"
+    bomb_config = "h0⅓"
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     system.decompose_born()
@@ -520,7 +520,7 @@ def plot_report(report=report, resolution=200):
             axes[b - 1, 0].set_xlabel(None)
         axes[b - 1, 0].set_ylabel(f"bomb {b}")
         axes[b - 1, 0].set_title(
-            f"a\\initial (purity = {np.round(purity, ROUND)})"
+            f"initial (purity = {np.round(purity, ROUND)})"
         )
         axes[b - 1, 0].set_xticks(np.arange(-1, 3, 1))
         axes[b - 1, 0].set_xlim([-0.5, 1.5])
@@ -547,28 +547,62 @@ def plot_report(report=report, resolution=200):
     plt.show()
 
     # Wigner
-    xvec = np.linspace(-5, 5, 200)
+    xvec = np.linspace(-5, 5, resolution)
     fig, axes = plt.subplots(N, N + 1, figsize=(12, 3 * N))
+
+    (vmin, vmax) = (-0.2, 0.32)
 
     cont = []
     lbl = []
     for b in range(1, N + 1):
         cont += [
             axes[b - 1, 0].contourf(
-                xvec, xvec, qt.wigner(rho(1, b, "initial"), xvec, xvec), 100
+                xvec,
+                xvec,
+                qt.wigner(rho(1, b, "initial"), xvec, xvec),
+                100,
+                vmin=vmin,
+                vmax=vmax,
             )
         ]
-        lbl += [axes[b - 1, 0].set_title("Initial")]
+        lbl += [
+            axes[b - 1, 0].set_title(
+                "Initial"
+                + str(np.max(qt.wigner(rho(1, b, "initial"), xvec, xvec)))
+            )
+        ]
+        # fig.colorbar(cont[-1], ax=lbl[-1], orientation='vertical')
         for o in range(1, N + 1):
             cont += [
                 axes[b - 1, o].contourf(
-                    xvec, xvec, qt.wigner(rho(o, b, "final"), xvec, xvec), 100
+                    xvec,
+                    xvec,
+                    qt.wigner(rho(o, b, "final"), xvec, xvec),
+                    100,
+                    vmin=vmin,
+                    vmax=vmax,
+                    cmap="viridis"
+                    # norm='Normalize'
                 )
             ]
             lbl += [axes[b - 1, o].set_title(f"outcome {o}")]
+            # fig.colorbar(cont[-1], ax=lbl[-1], orientation='vertical')
 
     fig.tight_layout()
     plt.show()
 
 
 plot_report()
+
+
+# %%
+resolution = 100
+xvec = np.linspace(-3, 3, resolution)
+rho = qt.Qobj(report.actual.rho.initial.loc[(1, 2)])
+plt.contourf(
+    xvec,
+    xvec,
+    qt.wigner(rho, xvec, xvec),
+    100,
+    # vmin=vmin, vmax=vmax, cmap='viridis'
+)
