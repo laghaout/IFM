@@ -19,7 +19,8 @@ from itertools import combinations
 ROUND = 4  # Number of decimal points to display when rounding
 DELIMITER = "·"
 
-# Short hand for representing the quantum states of the bombs as characters
+# Shorthand for representing the quantum states of the bombs as single
+# characters
 bomb_dict = {
     "0": np.array([0, 0, 1]),
     "1": np.array([0, 1, 0]),
@@ -29,6 +30,8 @@ bomb_dict = {
     "h": np.array([0, 1, 1j]) / np.sqrt(2),
     "t": np.array([0, 1, 1j * np.sqrt(2)]) / np.sqrt(3),
     "T": np.array([0, np.sqrt(2), 1j]) / np.sqrt(3),
+    "O": np.array([0, 1 - qi.TOL, qi.TOL])
+    / np.sqrt(1 - 2 * qi.TOL + 2 * qi.TOL**2),
 }
 
 
@@ -470,7 +473,7 @@ if __name__ == "__main__":
     """
     ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½ ⅔½½
     """
-    bomb_config = "h0⅓"
+    bomb_config = "O⅓0"
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
     system.decompose_born()
@@ -492,11 +495,15 @@ import seaborn as sns
 import qutip.visualization as qtv
 
 
-def rho(outcome, bomb, config="final", return_type="qutip"):
+def get_rho(outcome, bomb, config="final", return_type="qutip"):
+    rho = report.actual.rho[config].loc[(outcome, bomb)].copy()
+    rho = rho.T
+    rho_00 = rho[0, 0]
+    rho[0, 0] = rho[1, 1]
+    rho[1, 1] = rho_00
     if return_type == "qutip":
-        return qt.Qobj(report.actual.rho[config].loc[(outcome, bomb)])
-    else:
-        report.actual.rho[config].loc[(outcome, bomb)]
+        rho = qt.Qobj(rho)
+    return rho
 
 
 def plot_report(report=report, resolution=200):
@@ -509,7 +516,7 @@ def plot_report(report=report, resolution=200):
         # compute the purity and plot the Fock diagonal for the initial state,
         purity = qi.purity(report.actual.rho["initial"].loc[(1, b)])
         qtv.plot_fock_distribution(
-            rho(1, b, "initial"),
+            get_rho(1, b, "initial"),
             fig=fig,
             ax=axes[b - 1, 0],
             # title=f"initial (purity = {np.round(purity, ROUND)})",
@@ -519,9 +526,7 @@ def plot_report(report=report, resolution=200):
         else:
             axes[b - 1, 0].set_xlabel(None)
         axes[b - 1, 0].set_ylabel(f"bomb {b}")
-        axes[b - 1, 0].set_title(
-            f"initial (purity = {np.round(purity, ROUND)})"
-        )
+        axes[b - 1, 0].set_title(f"initial ({np.round(purity, ROUND)})")
         axes[b - 1, 0].set_xticks(np.arange(-1, 3, 1))
         axes[b - 1, 0].set_xlim([-0.5, 1.5])
 
@@ -529,28 +534,32 @@ def plot_report(report=report, resolution=200):
         for o in range(1, N + 1):
             purity = qi.purity(report.actual.rho["final"].loc[(o, b)])
             qtv.plot_fock_distribution(
-                rho(o, b, "final"),
+                get_rho(o, b, "final"),
                 fig=fig,
                 ax=axes[b - 1, o],
                 # title=f"(purity = {np.round(purity, ROUND)})",
             )
+
             if b == N:
                 axes[b - 1, o].set_xlabel("Fock diagonal")
             else:
                 axes[b - 1, o].set_xlabel(None)
-            axes[b - 1, o].set_ylabel(f"bomb {b}")
-            axes[b - 1, o].set_title(f"(purity = {np.round(purity, ROUND)})")
+            axes[b - 1, o].set_ylabel(None)
+            axes[b - 1, o].set_title(f"{o} ({np.round(purity, ROUND)})")
             axes[b - 1, o].set_xticks(np.arange(-1, 3, 1))
             axes[b - 1, o].set_xlim([-0.5, 1.5])
 
     fig.tight_layout()
+    plt.title("Overall")
+    plt.savefig("Fock.pdf")
     plt.show()
 
     # Wigner
-    xvec = np.linspace(-5, 5, resolution)
+    xvec = np.linspace(-3, 3, resolution)
     fig, axes = plt.subplots(N, N + 1, figsize=(12, 3 * N))
 
     (vmin, vmax) = (-0.2, 0.32)
+    # (vmin, vmax) = (-0.5, 0.5)
 
     cont = []
     lbl = []
@@ -559,16 +568,16 @@ def plot_report(report=report, resolution=200):
             axes[b - 1, 0].contourf(
                 xvec,
                 xvec,
-                qt.wigner(rho(1, b, "initial"), xvec, xvec),
-                100,
+                qt.wigner(get_rho(1, b, "initial"), xvec, xvec),
+                resolution,
                 vmin=vmin,
                 vmax=vmax,
             )
         ]
         lbl += [
-            axes[b - 1, 0].set_title(
-                "Initial"
-                + str(np.max(qt.wigner(rho(1, b, "initial"), xvec, xvec)))
+            (
+                axes[b - 1, 0].set_title("initial"),
+                axes[b - 1, 0].set_ylabel(f"bomb {b}"),
             )
         ]
         # fig.colorbar(cont[-1], ax=lbl[-1], orientation='vertical')
@@ -577,18 +586,28 @@ def plot_report(report=report, resolution=200):
                 axes[b - 1, o].contourf(
                     xvec,
                     xvec,
-                    qt.wigner(rho(o, b, "final"), xvec, xvec),
-                    100,
+                    qt.wigner(get_rho(o, b, "final"), xvec, xvec),
+                    resolution,
                     vmin=vmin,
                     vmax=vmax,
-                    cmap="viridis"
+                    # cmap="viridis"
                     # norm='Normalize'
                 )
             ]
-            lbl += [axes[b - 1, o].set_title(f"outcome {o}")]
+            lbl += [
+                (
+                    axes[b - 1, o].set_title(f"{o}"),
+                    axes[b - 1, o].set_ylabel(None),
+                )
+            ]
             # fig.colorbar(cont[-1], ax=lbl[-1], orientation='vertical')
 
+    for k in cont:
+        for c in k.collections:
+            c.set_edgecolor("face")
+
     fig.tight_layout()
+    plt.savefig("Wigner.pdf")
     plt.show()
 
 
@@ -596,13 +615,15 @@ plot_report()
 
 
 # %%
-resolution = 100
-xvec = np.linspace(-3, 3, resolution)
-rho = qt.Qobj(report.actual.rho.initial.loc[(1, 2)])
-plt.contourf(
-    xvec,
-    xvec,
-    qt.wigner(rho, xvec, xvec),
-    100,
-    # vmin=vmin, vmax=vmax, cmap='viridis'
-)
+# resolution = 100
+# xvec = np.linspace(-3, 3, resolution)
+# # rho = qt.Qobj(report.actual.rho.initial.loc[(1, 2)])
+# mrho = get_rho(1, 2, 'final')
+# print(mrho)
+# plt.contourf(
+#     xvec,
+#     xvec,
+#     qt.wigner(mrho, xvec, xvec),
+#     resolution,
+#     # vmin=vmin, vmax=vmax, cmap='viridis'
+# )
