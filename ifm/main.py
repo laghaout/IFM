@@ -9,12 +9,13 @@ interferometers where the bombs can be in a superposition of being on a path
 and away from the path.
 """
 
+from itertools import combinations
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from pprint import pprint
 import quantum_information as qi
-
-from itertools import combinations
+import qutip as qt
+import qutip.visualization as qtv
 
 ROUND = 4  # Number of decimal points to display when rounding
 DELIMITER = "·"
@@ -171,6 +172,27 @@ class System:
         # Compute the coefficient for each photon outcome.
         for outcome in range(1, self.N + 1):
             self.coeffs[outcome] = self.coeffs.index
+
+            if outcome == 1:
+                _ = self.coeffs[outcome].apply(
+                    lambda ket: print(
+                        np.prod(
+                            [self.b[m][int(x)] for m, x in enumerate(ket)]
+                        ).shape,
+                        self.BS[1:, outcome].shape,
+                        self.g[1:].shape,
+                        np.array([j == "2" for j in ket]).shape,
+                    )
+                )
+
+            # _ = self.coeffs[outcome].apply(
+            #     lambda ket: np.prod(
+            #         [self.b[m][int(x)] for m, x in enumerate(ket)]
+            #     )
+            #     * np.multiply(self.BS[1:, outcome], self.g[1:])
+            #     @ np.array([j == "2" for j in ket])
+            # )
+
             self.coeffs[outcome] = self.coeffs[outcome].apply(
                 lambda ket: np.prod(
                     [self.b[m][int(x)] for m, x in enumerate(ket)]
@@ -467,163 +489,154 @@ class System:
         # assert abs(self.report.linear.fidelity.sum().sum() - len(self.report)) < qi.TOL, \
         #     "Linear combination failed: Fidelity with the output state < 1."
 
+    def get_rho(
+        self,
+        outcome,
+        bomb,
+        config="final",
+        rho_type="actual",
+        return_type=None,
+    ):
+        rho = self.report[rho_type].rho[config].loc[(outcome, bomb)].copy()
+        rho = rho.T
+        rho_00 = rho[0, 0]
+        rho[0, 0] = rho[1, 1]
+        rho[1, 1] = rho_00
+        if return_type == "qutip":
+            rho = qt.Qobj(rho)
+        return rho
+
+    def plot_report(self, resolution=200):
+        N = self.N
+        report = self.report
+
+        fig, axes = plt.subplots(N, N + 1, figsize=(4 * N, 4 * N))
+
+        # Plot the diagonals of the Fock density matrix of each bomb. For each
+        # such plot, mention the purity of the state.
+        for b in range(1, N + 1):
+            # Start with the initial state of the bomb.
+            purity = qi.purity(report.actual.rho["initial"].loc[(1, b)])
+            qtv.plot_fock_distribution(
+                self.get_rho(1, b, "initial", return_type="qutip"),
+                fig=fig,
+                ax=axes[b - 1, 0],
+            )
+
+            # Only write the x-label for the lowest subplot (i.e., the last
+            # bomb).
+            if b == N:
+                axes[b - 1, 0].set_xlabel("Fock diagonal")
+            else:
+                axes[b - 1, 0].set_xlabel(None)
+            axes[b - 1, 0].set_ylabel(f"bomb {b}")
+            axes[b - 1, 0].set_title(f"initial ({np.round(purity, ROUND)})")
+            axes[b - 1, 0].set_xticks(np.arange(-1, 3, 1))
+            axes[b - 1, 0].set_xlim([-0.5, 1.5])
+
+            # Then do the same for the states resulting from each detection
+            # outcome.
+            for o in range(1, N + 1):
+                purity = qi.purity(report.actual.rho["final"].loc[(o, b)])
+                qtv.plot_fock_distribution(
+                    self.get_rho(o, b, "final", return_type="qutip"),
+                    fig=fig,
+                    ax=axes[b - 1, o],
+                )
+
+                # Only write the x-label for the lowest subplot (i.e., the last
+                # bomb).
+                if b == N:
+                    axes[b - 1, o].set_xlabel("Fock diagonal")
+                else:
+                    axes[b - 1, o].set_xlabel(None)
+                axes[b - 1, o].set_ylabel(None)
+                axes[b - 1, o].set_title(f"{o} ({np.round(purity, ROUND)})")
+                axes[b - 1, o].set_xticks(np.arange(-1, 3, 1))
+                axes[b - 1, o].set_xlim([-0.5, 1.5])
+
+        fig.tight_layout()
+        plt.savefig(f"{self.N} {self.bomb_config} Fock.pdf")
+        plt.show()
+
+        # Do the same as the above, but now plot the Wigner functions instead.
+        xvec = np.linspace(-3, 3, resolution)
+        fig, axes = plt.subplots(N, N + 1, figsize=(4 * N, 4 * N))
+
+        (vmin, vmax) = (-0.2, 0.32)
+        # (vmin, vmax) = (-0.5, 0.5)
+
+        cont = []
+        lbl = []
+        for b in range(1, N + 1):
+            cont += [
+                axes[b - 1, 0].contourf(
+                    xvec,
+                    xvec,
+                    qt.wigner(
+                        self.get_rho(1, b, "initial", return_type="qutip"),
+                        xvec,
+                        xvec,
+                    ),
+                    resolution,
+                    vmin=vmin,
+                    vmax=vmax,
+                )
+            ]
+            lbl += [
+                (
+                    axes[b - 1, 0].set_title("initial"),
+                    axes[b - 1, 0].set_ylabel(f"bomb {b}"),
+                )
+            ]
+            # fig.colorbar(cont[-1], ax=lbl[-1], orientation='vertical')
+            for o in range(1, N + 1):
+                cont += [
+                    axes[b - 1, o].contourf(
+                        xvec,
+                        xvec,
+                        qt.wigner(
+                            self.get_rho(o, b, "final", return_type="qutip"),
+                            xvec,
+                            xvec,
+                        ),
+                        resolution,
+                        vmin=vmin,
+                        vmax=vmax,
+                        # cmap="viridis"
+                        # norm='Normalize'
+                    )
+                ]
+                lbl += [
+                    (
+                        axes[b - 1, o].set_title(f"{o}"),
+                        axes[b - 1, o].set_ylabel(None),
+                    )
+                ]
+                # fig.colorbar(cont[-1], ax=lbl[-1], orientation='vertical')
+
+        # for k in cont:
+        #     for c in k.collections:
+        #         c.set_edgecolor("face")
+
+        fig.tight_layout()
+        plt.savefig(f"{self.N} {self.bomb_config} Wigner.pdf")
+        plt.show()
+
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
     """
     ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½ ⅔½½
     """
-    bomb_config = "O⅓0"
+    bomb_config = "⅔0½0"
     system = System(bomb_config, "0" + "1" * len(bomb_config))
     system()
+    print(system.BS.shape, system.g.shape, len(system.b))
+    print(system.P)
     system.decompose_born()
     system.decompose_linear()
     matrix = system.matrix
     report = system.report
-
-df = report.copy()
-df.index = df.index.swaplevel(0, 1)
-df.sort_index(axis=0, level=0, inplace=True)
-
-# %%
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-import qutip as qt
-import seaborn as sns
-import qutip.visualization as qtv
-
-
-def get_rho(outcome, bomb, config="final", return_type="qutip"):
-    rho = report.actual.rho[config].loc[(outcome, bomb)].copy()
-    rho = rho.T
-    rho_00 = rho[0, 0]
-    rho[0, 0] = rho[1, 1]
-    rho[1, 1] = rho_00
-    if return_type == "qutip":
-        rho = qt.Qobj(rho)
-    return rho
-
-
-def plot_report(report=report, resolution=200):
-    N = int(np.sqrt(report.actual.rho.final.shape[0]))
-
-    fig, axes = plt.subplots(N, N + 1, figsize=(12, 3 * N))
-
-    # For each bomb,
-    for b in range(1, N + 1):
-        # compute the purity and plot the Fock diagonal for the initial state,
-        purity = qi.purity(report.actual.rho["initial"].loc[(1, b)])
-        qtv.plot_fock_distribution(
-            get_rho(1, b, "initial"),
-            fig=fig,
-            ax=axes[b - 1, 0],
-            # title=f"initial (purity = {np.round(purity, ROUND)})",
-        )
-        if b == N:
-            axes[b - 1, 0].set_xlabel("Fock diagonal")
-        else:
-            axes[b - 1, 0].set_xlabel(None)
-        axes[b - 1, 0].set_ylabel(f"bomb {b}")
-        axes[b - 1, 0].set_title(f"initial ({np.round(purity, ROUND)})")
-        axes[b - 1, 0].set_xticks(np.arange(-1, 3, 1))
-        axes[b - 1, 0].set_xlim([-0.5, 1.5])
-
-        # as well as for all the possible outcomes.
-        for o in range(1, N + 1):
-            purity = qi.purity(report.actual.rho["final"].loc[(o, b)])
-            qtv.plot_fock_distribution(
-                get_rho(o, b, "final"),
-                fig=fig,
-                ax=axes[b - 1, o],
-                # title=f"(purity = {np.round(purity, ROUND)})",
-            )
-
-            if b == N:
-                axes[b - 1, o].set_xlabel("Fock diagonal")
-            else:
-                axes[b - 1, o].set_xlabel(None)
-            axes[b - 1, o].set_ylabel(None)
-            axes[b - 1, o].set_title(f"{o} ({np.round(purity, ROUND)})")
-            axes[b - 1, o].set_xticks(np.arange(-1, 3, 1))
-            axes[b - 1, o].set_xlim([-0.5, 1.5])
-
-    fig.tight_layout()
-    plt.title("Overall")
-    plt.savefig("Fock.pdf")
-    plt.show()
-
-    # Wigner
-    xvec = np.linspace(-3, 3, resolution)
-    fig, axes = plt.subplots(N, N + 1, figsize=(12, 3 * N))
-
-    (vmin, vmax) = (-0.2, 0.32)
-    # (vmin, vmax) = (-0.5, 0.5)
-
-    cont = []
-    lbl = []
-    for b in range(1, N + 1):
-        cont += [
-            axes[b - 1, 0].contourf(
-                xvec,
-                xvec,
-                qt.wigner(get_rho(1, b, "initial"), xvec, xvec),
-                resolution,
-                vmin=vmin,
-                vmax=vmax,
-            )
-        ]
-        lbl += [
-            (
-                axes[b - 1, 0].set_title("initial"),
-                axes[b - 1, 0].set_ylabel(f"bomb {b}"),
-            )
-        ]
-        # fig.colorbar(cont[-1], ax=lbl[-1], orientation='vertical')
-        for o in range(1, N + 1):
-            cont += [
-                axes[b - 1, o].contourf(
-                    xvec,
-                    xvec,
-                    qt.wigner(get_rho(o, b, "final"), xvec, xvec),
-                    resolution,
-                    vmin=vmin,
-                    vmax=vmax,
-                    # cmap="viridis"
-                    # norm='Normalize'
-                )
-            ]
-            lbl += [
-                (
-                    axes[b - 1, o].set_title(f"{o}"),
-                    axes[b - 1, o].set_ylabel(None),
-                )
-            ]
-            # fig.colorbar(cont[-1], ax=lbl[-1], orientation='vertical')
-
-    for k in cont:
-        for c in k.collections:
-            c.set_edgecolor("face")
-
-    fig.tight_layout()
-    plt.savefig("Wigner.pdf")
-    plt.show()
-
-
-plot_report()
-
-
-# %%
-# resolution = 100
-# xvec = np.linspace(-3, 3, resolution)
-# # rho = qt.Qobj(report.actual.rho.initial.loc[(1, 2)])
-# mrho = get_rho(1, 2, 'final')
-# print(mrho)
-# plt.contourf(
-#     xvec,
-#     xvec,
-#     qt.wigner(mrho, xvec, xvec),
-#     resolution,
-#     # vmin=vmin, vmax=vmax, cmap='viridis'
-# )
+    # system.plot_report(100)
+    del system
