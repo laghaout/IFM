@@ -16,6 +16,7 @@ import pandas as pd
 import quantum_information as qi
 import qutip as qt
 import qutip.visualization as qtv
+import seaborn as sns
 
 ROUND = 4  # Number of decimal points to display when rounding
 DELIMITER = "·"
@@ -24,15 +25,15 @@ DELIMITER = "·"
 # characters
 bomb_dict = {
     "0": np.array([0, 0, 1]),
-    "1": np.array([0, 1, 0]),
+    # "1": np.array([0, 1, 0]),
+    "1": np.array([0, 1 - qi.TOL, qi.TOL])
+    / np.sqrt(1 - 2 * qi.TOL + 2 * qi.TOL**2),
     "½": np.array([0, 1, 1]) / np.sqrt(2),
     "⅓": np.array([0, 1, np.sqrt(2)]) / np.sqrt(3),
     "⅔": np.array([0, np.sqrt(2), 1]) / np.sqrt(3),
     "h": np.array([0, 1, 1j]) / np.sqrt(2),
     "t": np.array([0, 1, 1j * np.sqrt(2)]) / np.sqrt(3),
     "T": np.array([0, np.sqrt(2), 1j]) / np.sqrt(3),
-    "O": np.array([0, 1 - qi.TOL, qi.TOL])
-    / np.sqrt(1 - 2 * qi.TOL + 2 * qi.TOL**2),
 }
 
 
@@ -173,17 +174,18 @@ class System:
         for outcome in range(1, self.N + 1):
             self.coeffs[outcome] = self.coeffs.index
 
-            if outcome == 1:
-                _ = self.coeffs[outcome].apply(
-                    lambda ket: print(
-                        np.prod(
-                            [self.b[m][int(x)] for m, x in enumerate(ket)]
-                        ).shape,
-                        self.BS[1:, outcome].shape,
-                        self.g[1:].shape,
-                        np.array([j == "2" for j in ket]).shape,
-                    )
-                )
+            # TODO: DELETE
+            # if outcome == 1:
+            #     _ = self.coeffs[outcome].apply(
+            #         lambda ket: print(
+            #             np.prod(
+            #                 [self.b[m][int(x)] for m, x in enumerate(ket)]
+            #             ).shape,
+            #             self.BS[1:, outcome].shape,
+            #             self.g[1:].shape,
+            #             np.array([j == "2" for j in ket]).shape,
+            #         )
+            #     )
 
             # _ = self.coeffs[outcome].apply(
             #     lambda ket: np.prod(
@@ -346,11 +348,11 @@ class System:
         # For each Born decomposition,
         for ci, c in enumerate(self.combis.index):
             # generate the corresponding system
-            system = System(bomb_config, "0" + self.combis.at[c, "cleared"])
-            system()
+            subsystem = System(bomb_config, "0" + self.combis.at[c, "cleared"])
+            subsystem()
 
             # and save the outcome probabilities.
-            self.combis.at[c, range(1, N + 1)] = system.P.values
+            self.combis.at[c, range(1, N + 1)] = subsystem.P.values
 
             # For each outcome
             for outcome in range(1, N + 1):
@@ -365,7 +367,7 @@ class System:
                     # Sinha et al.
                     if ci > 0:
                         reconstructed_rho[outcome][bomb] -= (
-                            system.report.loc[
+                            subsystem.report.loc[
                                 (outcome, bomb), ("actual", "rho", "final")
                             ]
                             * self.combis.at[c, "weight"]
@@ -375,7 +377,7 @@ class System:
 
                         # compute the density matrix of the pre-measurement state,
                         self.report[("actual", "rho", c)] = self.report.apply(
-                            lambda x: system.report.loc[
+                            lambda x: subsystem.report.loc[
                                 (x.name[0], x.name[1]),
                                 ("actual", "rho", "final"),
                             ],
@@ -386,7 +388,7 @@ class System:
                             ("actual", "purity", c)
                         ] = self.report.apply(
                             lambda x: qi.purity(
-                                system.report.loc[
+                                subsystem.report.loc[
                                     (x.name[0], x.name[1]),
                                     ("actual", "rho", "final"),
                                 ]
@@ -506,7 +508,7 @@ class System:
             rho = qt.Qobj(rho)
         return rho
 
-    def plot_report(self, resolution=200):
+    def plot_report(self, resolution=200, optimize_pdf=True):
         N = self.N
         report = self.report
 
@@ -615,13 +617,22 @@ class System:
                 ]
                 # fig.colorbar(cont[-1], ax=lbl[-1], orientation='vertical')
 
-        # for k in cont:
-        #     for c in k.collections:
-        #         c.set_edgecolor("face")
+        if optimize_pdf:
+            for k in cont:
+                for c in k.collections:
+                    c.set_edgecolor("face")
 
         fig.tight_layout()
         plt.savefig(f"{self.N} {self.bomb_config} Wigner.pdf")
         plt.show()
+
+
+def print_shapes(self):
+    print(f"- {self.N = }")
+    print(f"- {self.bomb_config = }")
+    print(f"- {self.BS.shape = }")
+    print(f"- {self.g.shape = }")
+    print(f"- {len(self.b) = }")
 
 
 # %% Run as a script, not as a module.
@@ -629,14 +640,19 @@ if __name__ == "__main__":
     """
     ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½ ⅔½½
     """
-    bomb_config = "⅔0½0"
-    system = System(bomb_config, "0" + "1" * len(bomb_config))
-    system()
-    print(system.BS.shape, system.g.shape, len(system.b))
-    print(system.P)
-    system.decompose_born()
-    system.decompose_linear()
-    matrix = system.matrix
-    report = system.report
-    # system.plot_report(100)
-    del system
+    # for bomb_config in "10 100 1000 ½0 ½00 ½000 ⅓0 ⅓00 ⅓000 ½½ ½½½".split():
+    for bomb_config in "½0".split():
+        system = System(bomb_config, "0" + "1" * len(bomb_config))
+        system()
+        # print_shapes(system)
+        # print_shapes(system)
+        # system.decompose_born()
+        # system.decompose_linear()
+        # matrix = system.matrix
+        report = system.report
+        system.plot_report(100, optimize_pdf=True)
+
+
+# %%
+system.P = pd.DataFrame({"probability": system.P.values}, index=system.P.index)
+sns.barplot(data=system.P, x="")
