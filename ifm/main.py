@@ -5,7 +5,7 @@ Created on Sun Oct 29 14:04:59 2023
 @author: Amine Laghaout
 
 Generalization of the Elitzur-Vaidman bomb tester to `N`-partite Mach-Zehnder
-interferometers where the bombs can be in a superposition of being on a path
+interferometers where the bombs can be in a superposition of being on the path
 and away from the path.
 """
 
@@ -22,12 +22,22 @@ ROUND = 4  # Number of decimal points to display when rounding
 DELIMITER = "·"
 
 # Shorthand for representing the quantum states of the bombs as single
-# characters
-bomb_dict = {
+# characters. The dimensions of this "bomb Hilbert space" are as follows:
+# - dimension 0: the bomb has exploded
+# - dimension 1: the bomb is on the photon's path
+# - dimension 2: the bomb is away from the photon's path.
+# This 3-dimensional vector represents a coherent superposition of these 3
+# "orthogonal" possibilities.
+BOMB_DICT = {
+    # Completely away from the photon's path
     "0": np.array([0, 0, 1]),
-    # "1": np.array([0, 1, 0]),
-    "1": np.array([0, 1 - qi.TOL, qi.TOL])
+    #  Completely on the photon's path
+    "1": np.array([0, 1, 0]),
+    # "Asymptotically close" to being completely on the photon's path
+    "O": np.array([0, 1 - qi.TOL, qi.TOL])
     / np.sqrt(1 - 2 * qi.TOL + 2 * qi.TOL**2),
+    # In an equal, coherent superposition of being on the photon's path and
+    # away from it
     "½": np.array([0, 1, 1]) / np.sqrt(2),
     "⅓": np.array([0, 1, np.sqrt(2)]) / np.sqrt(3),
     "⅔": np.array([0, np.sqrt(2), 1]) / np.sqrt(3),
@@ -42,20 +52,21 @@ class System:
         # Tuple of bomb states
         if isinstance(b, str):
             self.bomb_config = b
-            self.b = tuple(bomb_dict[bomb] for bomb in b)
+            self.b = tuple(BOMB_DICT[bomb] for bomb in b)
         else:
             self.b = b
+            assert False not in [isinstance(k, np.ndarray) for k in self.b]
 
-        # Infer the number of paths
+        # Infer the number of paths form the number of bombs.
         self.N = len(self.b)
 
         # If unspecified, assume that the photon is in a uniform, coherent
         # superposition over all modes.
         if g is None:
             g = np.array([0] + [1] * self.N) / np.sqrt(self.N)
-        # If specified...
+        # If specified…
         else:
-            # as a string, convert it to a list of integer, and...
+            # as a string, convert it to a list of integers, and…
             if isinstance(g, str):
                 g = np.array([int(k) for k in list(g)], dtype=complex)
             # if specified as a list, convert it to a NumPy array.
@@ -75,9 +86,8 @@ class System:
         # Post-photon-measurement state
         self.compute_coeffs()
 
-        # Initialization of the post-photon-measurement states of the bombs
-        # keyed by outcome (i.e., photon click position) and by bomb index
-        # (i.e., path location).
+        # Initialize the post-photon-measurement states of the bombs keyed by
+        # outcome (i.e., location of the detector click) and by bomb index.
         bombs = {
             outcome: {  # Outcome
                 bomb: np.nan  # Bomb index (path location)
@@ -87,12 +97,13 @@ class System:
             for outcome in range(1, self.N + 1)
         }
 
-        # For each outcome,
+        # For each outcome…
         for outcome in range(1, self.N + 1):
-            # retrieve the post-measurement state (ket vectors).
+            # retrieve the set of possible post-measurement state (i.e.,
+            # basis vectors for the photonic state).
             kets = self.coeffs.index.to_list()
 
-            # For each bomb...
+            # For each bomb…
             # TODO: Change the range to go from 1 to N and replace b with b-1.
             for b in range(self.N):
                 # compute the (start, end) pairs for the current outcome. See
@@ -111,9 +122,9 @@ class System:
 
                 # Compute the 2×2 density matrix of the unexploded bomb. Note
                 # that this would have been 3×3 if we kept the 0th, "explosion"
-                # basis ket. However, since the photon reached the detector and
-                # the bomb remained unexploded, that 0th dimension can thus be
-                # ignored.
+                # basis ket. However, that 0th dimension can be ignored since
+                # the photon reached the detector is therefore known to have
+                # remained unexploded.
                 for n, m in [(0, 0), (0, 1), (1, 0), (1, 1)]:
                     # Coefficient of ∣n⟩⟨m∣
                     bombs[outcome][b + 1][n, m] = np.sum(
@@ -129,21 +140,20 @@ class System:
                     bomb[len(bomb) - 1]
                 )
 
-                # Assert that the current comb state is a density matrix.
+                # Assert that the current bomb state is a density matrix.
                 bombs[outcome][b + 1] = qi.trim_imaginary(
                     bombs[outcome][b + 1], qi.TOL
                 )
                 assert qi.is_density_matrix(
                     bombs[outcome][b + 1]
                 ), f"outcome {outcome}, bomb {b+1}:\n{bombs[outcome][b + 1]}\
-                        \n{self.P}"
+                        \n{self.prob}"
 
                 # Move one "bit" to the right for the next bomb. Cf. the
                 # manuscript for the full details.
                 kets = [k[-1] + k[:-1] for k in kets]
 
         self.combis = self.Born_decomposition(self.N)
-
         self.report = self.prep_report(bombs)
 
     def compute_coeffs(self):
@@ -154,15 +164,14 @@ class System:
         TODO: Add the 0th, "explosion" outcome.
         """
 
-        # There are 2^N basis states.
+        # There are 2ᴺ basis states.
         self.coeffs = pd.DataFrame(index=list(range(2**self.N)))
 
         # Convert to binary representation.
         self.coeffs["ket"] = self.coeffs.index.map(lambda x: bin(x)[2:])
 
         # Pad with zeros and add one to each "bit" so, e.g., 01 becomes 12,
-        # clearedly a photon on the first path and no photon on the second
-        # path.
+        # meaning a photon on the first path and no photon on the second path.
         self.coeffs["ket"] = self.coeffs["ket"].apply(
             lambda x: "".join(
                 [str(int(y) + 1) for y in list("0" * (self.N - len(x)) + x)]
@@ -174,27 +183,6 @@ class System:
         for outcome in range(1, self.N + 1):
             self.coeffs[outcome] = self.coeffs.index
 
-            # TODO: DELETE
-            # if outcome == 1:
-            #     _ = self.coeffs[outcome].apply(
-            #         lambda ket: print(
-            #             np.prod(
-            #                 [self.b[m][int(x)] for m, x in enumerate(ket)]
-            #             ).shape,
-            #             self.BS[1:, outcome].shape,
-            #             self.g[1:].shape,
-            #             np.array([j == "2" for j in ket]).shape,
-            #         )
-            #     )
-
-            # _ = self.coeffs[outcome].apply(
-            #     lambda ket: np.prod(
-            #         [self.b[m][int(x)] for m, x in enumerate(ket)]
-            #     )
-            #     * np.multiply(self.BS[1:, outcome], self.g[1:])
-            #     @ np.array([j == "2" for j in ket])
-            # )
-
             self.coeffs[outcome] = self.coeffs[outcome].apply(
                 lambda ket: np.prod(
                     [self.b[m][int(x)] for m, x in enumerate(ket)]
@@ -204,12 +192,15 @@ class System:
             )
 
         # Compute the probability of each outcome.
-        self.P = self.coeffs.apply(
+        self.prob = self.coeffs.apply(
             lambda y: qi.trim_imaginary(np.conj(y) @ y, qi.TOL), axis=0
         )
+        self.prob = pd.DataFrame(
+            dict(probability=self.prob.values), index=self.prob.index
+        )
 
-        # Normalize.
-        self.coeffs /= np.sqrt(self.P)
+        # Normalize the whole state.
+        self.coeffs /= np.sqrt(self.prob.probability)
 
     @staticmethod
     def Born_decomposition(N, k=2, delimiter=DELIMITER, sort=True):
@@ -352,7 +343,7 @@ class System:
             subsystem()
 
             # and save the outcome probabilities.
-            self.combis.at[c, range(1, N + 1)] = subsystem.P.values
+            self.combis.at[c, range(1, N + 1)] = subsystem.prob.values
 
             # For each outcome
             for outcome in range(1, N + 1):
@@ -641,18 +632,22 @@ if __name__ == "__main__":
     ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½ ⅔½½
     """
     # for bomb_config in "10 100 1000 ½0 ½00 ½000 ⅓0 ⅓00 ⅓000 ½½ ½½½".split():
-    for bomb_config in "½0".split():
+    for bomb_config in "10".split():
         system = System(bomb_config, "0" + "1" * len(bomb_config))
         system()
+        coeffs = system.coeffs
+        combis = system.combis
+        prob = system.prob
+        print(prob)
         # print_shapes(system)
         # print_shapes(system)
         # system.decompose_born()
         # system.decompose_linear()
         # matrix = system.matrix
         report = system.report
-        system.plot_report(100, optimize_pdf=True)
+        system.plot_report(100, optimize_pdf=False)
 
 
 # %%
-system.P = pd.DataFrame({"probability": system.P.values}, index=system.P.index)
-sns.barplot(data=system.P, x="")
+# system.prob = pd.DataFrame({"probability": system.prob.values}, index=system.prob.index)
+# sns.barplot(data=system.prob, x="")
