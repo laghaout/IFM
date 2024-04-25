@@ -16,7 +16,6 @@ import pandas as pd
 import quantum_information as qi
 import qutip as qt
 import qutip.visualization as qtv
-import seaborn as sns
 
 ROUND = 4  # Number of decimal points to display when rounding
 DELIMITER = "·"
@@ -39,6 +38,7 @@ BOMB_DICT = {
     # In an equal, coherent superposition of being on the photon's path and
     # away from it
     "½": np.array([0, 1, 1]) / np.sqrt(2),
+    # Other superpositions of being on and away from the photon's path…
     "⅓": np.array([0, 1, np.sqrt(2)]) / np.sqrt(3),
     "⅔": np.array([0, np.sqrt(2), 1]) / np.sqrt(3),
     "h": np.array([0, 1, 1j]) / np.sqrt(2),
@@ -488,7 +488,7 @@ class System:
         bomb,
         config="final",
         rho_type="actual",
-        return_type=None,
+        return_type="numpy",
     ):
         rho = self.report[rho_type].rho[config].loc[(outcome, bomb)].copy()
         rho = rho.T
@@ -522,8 +522,15 @@ class System:
                 axes[b - 1, 0].set_xlabel("Fock diagonal")
             else:
                 axes[b - 1, 0].set_xlabel(None)
-            axes[b - 1, 0].set_ylabel(f"bomb {b}")
-            axes[b - 1, 0].set_title(f"initial ({np.round(purity, ROUND)})")
+            axes[b - 1, 0].set_ylabel(f"probability")
+            rho_LaTeX = r"$\hat{\rho}^{(" + str(b) + ")}$"
+            rho_LaTeX = (
+                r"$\frac{1}{\sqrt{2}}(\mid 0 \rangle + \mid 1 \rangle)$"
+            )
+            axes[b - 1, 0].set_title(
+                f"{rho_LaTeX}"
+                # f"purity = {np.round(purity, ROUND)}"
+            )
             axes[b - 1, 0].set_xticks(np.arange(-1, 3, 1))
             axes[b - 1, 0].set_xlim([-0.5, 1.5])
 
@@ -544,7 +551,10 @@ class System:
                 else:
                     axes[b - 1, o].set_xlabel(None)
                 axes[b - 1, o].set_ylabel(None)
-                axes[b - 1, o].set_title(f"{o} ({np.round(purity, ROUND)})")
+                rho_LaTeX = r"$\hat{\rho}^{(" + str(b) + ")}_{" + str(o) + "}$"
+                axes[b - 1, o].set_title(
+                    f"{rho_LaTeX}, purity = {np.round(purity, ROUND)}"
+                )
                 axes[b - 1, o].set_xticks(np.arange(-1, 3, 1))
                 axes[b - 1, o].set_xlim([-0.5, 1.5])
 
@@ -645,7 +655,7 @@ if __name__ == "__main__":
         # system.decompose_linear()
         # matrix = system.matrix
         report = system.report
-        system.plot_report(100, optimize_pdf=False)
+        system.plot_report(100, optimize_pdf=True)
 
 
 # %%
