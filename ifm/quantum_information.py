@@ -218,7 +218,7 @@ def purity(rho, tol=TOL):
     """
 
     purity = np.trace(rho @ rho)
-    assert -tol < purity < 1 + tol, f"purity is {purity}"
+    assert -tol < trim_imaginary(purity) < 1 + tol, f"purity is {purity}"
 
     if purity.imag < tol:
         purity = purity.real

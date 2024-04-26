@@ -17,6 +17,11 @@ import quantum_information as qi
 import qutip as qt
 import qutip.visualization as qtv
 
+plt.rcParams["text.usetex"] = True
+plt.rcParams["text.latex.preamble"] = " ".join(
+    [r"\usepackage{amsmath}", r"\usepackage{braket}"]
+)
+
 ROUND = 4  # Number of decimal points to display when rounding
 DELIMITER = "·"
 
@@ -46,13 +51,33 @@ BOMB_DICT = {
     "T": np.array([0, np.sqrt(2), 1j]) / np.sqrt(3),
 }
 
+BOMB_DICT = pd.DataFrame(BOMB_DICT).T
+columns = pd.MultiIndex.from_tuples(
+    [
+        ("val", "exploded"),
+        ("val", "blocking"),
+        ("val", "clear"),
+        ("LaTeX", None),
+    ]
+)
+BOMB_DICT["LaTeX"] = None
+BOMB_DICT = pd.DataFrame(
+    BOMB_DICT.values, index=BOMB_DICT.index, columns=columns
+)
+
+# %%
+
 
 class System:
     def __init__(self, b, g=None):
         # Tuple of bomb states
         if isinstance(b, str):
             self.bomb_config = b
-            self.b = tuple(BOMB_DICT[bomb] for bomb in b)
+            self.b = tuple(
+                # BOMB_DICT[bomb]
+                BOMB_DICT.loc[bomb, "val"].values
+                for bomb in b
+            )
         else:
             self.b = b
             assert False not in [isinstance(k, np.ndarray) for k in self.b]
@@ -524,13 +549,8 @@ class System:
                 axes[b - 1, 0].set_xlabel(None)
             axes[b - 1, 0].set_ylabel(f"probability")
             rho_LaTeX = r"$\hat{\rho}^{(" + str(b) + ")}$"
-            rho_LaTeX = (
-                r"$\frac{1}{\sqrt{2}}(\mid 0 \rangle + \mid 1 \rangle)$"
-            )
-            axes[b - 1, 0].set_title(
-                f"{rho_LaTeX}"
-                # f"purity = {np.round(purity, ROUND)}"
-            )
+            rho_LaTeX += r" = $\frac{1}{\sqrt{2}}(\ket{0} + \ket{1})$"
+            axes[b - 1, 0].set_title(rho_LaTeX)
             axes[b - 1, 0].set_xticks(np.arange(-1, 3, 1))
             axes[b - 1, 0].set_xlim([-0.5, 1.5])
 
@@ -655,7 +675,7 @@ if __name__ == "__main__":
         # system.decompose_linear()
         # matrix = system.matrix
         report = system.report
-        system.plot_report(100, optimize_pdf=True)
+        system.plot_report(100, optimize_pdf=False)
 
 
 # %%
