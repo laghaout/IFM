@@ -34,36 +34,37 @@ DELIMITER = "·"
 # "orthogonal" possibilities.
 BOMB_DICT = {
     # Completely away from the photon's path
-    "0": np.array([0, 0, 1]),
+    "0": (np.array([0, 0, 1]), r"$\ket{0}$"),
     #  Completely on the photon's path
-    "1": np.array([0, 1, 0]),
+    "1": (np.array([0, 1, 0]), r"$\ket{1}$"),
     # "Asymptotically close" to being completely on the photon's path
-    "O": np.array([0, 1 - qi.TOL, qi.TOL])
-    / np.sqrt(1 - 2 * qi.TOL + 2 * qi.TOL**2),
+    "O": (
+        np.array([0, 1 - qi.TOL, qi.TOL])
+        / np.sqrt(1 - 2 * qi.TOL + 2 * qi.TOL**2),
+        r"$\sqrt{\epsilon}\ket{0} + \sqrt{1-\epsilon}\ket{1}$",
+    ),
     # In an equal, coherent superposition of being on the photon's path and
     # away from it
-    "½": np.array([0, 1, 1]) / np.sqrt(2),
+    "½": (
+        np.array([0, 1, 1]) / np.sqrt(2),
+        r"$\frac{1}{\sqrt{2}}(\ket{0} + \ket{1})$",
+    ),
     # Other superpositions of being on and away from the photon's path…
-    "⅓": np.array([0, 1, np.sqrt(2)]) / np.sqrt(3),
-    "⅔": np.array([0, np.sqrt(2), 1]) / np.sqrt(3),
-    "h": np.array([0, 1, 1j]) / np.sqrt(2),
-    "t": np.array([0, 1, 1j * np.sqrt(2)]) / np.sqrt(3),
-    "T": np.array([0, np.sqrt(2), 1j]) / np.sqrt(3),
+    "⅓": (
+        np.array([0, 1, np.sqrt(2)]) / np.sqrt(3),
+        r"$\sqrt{\frac{2}{3}}\ket{0} + \frac{1}{\sqrt{3}}\ket{1}$",
+    ),
+    "⅔": (
+        np.array([0, np.sqrt(2), 1]) / np.sqrt(3),
+        r"$\frac{1}{\sqrt{3}}(\ket{0} + \sqrt{\frac{2}{3}}\ket{1})$",
+    ),
+    "h": (
+        np.array([0, 1, 1j]) / np.sqrt(2),
+        r"$\frac{1}{\sqrt{2}}(i\ket{0} + \ket{1})$",
+    ),
 }
 
-BOMB_DICT = pd.DataFrame(BOMB_DICT).T
-columns = pd.MultiIndex.from_tuples(
-    [
-        ("val", "exploded"),
-        ("val", "blocking"),
-        ("val", "clear"),
-        ("LaTeX", None),
-    ]
-)
-BOMB_DICT["LaTeX"] = None
-BOMB_DICT = pd.DataFrame(
-    BOMB_DICT.values, index=BOMB_DICT.index, columns=columns
-)
+BOMB_DICT = pd.DataFrame(BOMB_DICT, index=["state", "LaTeX"]).T
 
 # %%
 
@@ -75,7 +76,7 @@ class System:
             self.bomb_config = b
             self.b = tuple(
                 # BOMB_DICT[bomb]
-                BOMB_DICT.loc[bomb, "val"].values
+                BOMB_DICT.loc[bomb, "state"]
                 for bomb in b
             )
         else:
@@ -548,8 +549,8 @@ class System:
             else:
                 axes[b - 1, 0].set_xlabel(None)
             axes[b - 1, 0].set_ylabel(f"probability")
-            rho_LaTeX = r"$\hat{\rho}^{(" + str(b) + ")}$"
-            rho_LaTeX += r" = $\frac{1}{\sqrt{2}}(\ket{0} + \ket{1})$"
+            rho_LaTeX = r"$\hat{\rho}^{(" + str(b) + ")}$ = "
+            rho_LaTeX += BOMB_DICT.loc[self.bomb_config[b - 1]].LaTeX
             axes[b - 1, 0].set_title(rho_LaTeX)
             axes[b - 1, 0].set_xticks(np.arange(-1, 3, 1))
             axes[b - 1, 0].set_xlim([-0.5, 1.5])
@@ -579,7 +580,7 @@ class System:
                 axes[b - 1, o].set_xlim([-0.5, 1.5])
 
         fig.tight_layout()
-        plt.savefig(f"{self.N} {self.bomb_config} Fock.pdf")
+        plt.savefig(f"Fock.pdf")
         plt.show()
 
         # Do the same as the above, but now plot the Wigner functions instead.
@@ -606,10 +607,12 @@ class System:
                     vmax=vmax,
                 )
             ]
+            rho_LaTeX = r"$\hat{\rho}^{(" + str(b) + ")}$ = "
+            rho_LaTeX += BOMB_DICT.loc[self.bomb_config[b - 1]].LaTeX
             lbl += [
                 (
-                    axes[b - 1, 0].set_title("initial"),
-                    axes[b - 1, 0].set_ylabel(f"bomb {b}"),
+                    axes[b - 1, 0].set_title(rho_LaTeX),
+                    axes[b - 1, 0].set_ylabel(None),
                 )
             ]
             # fig.colorbar(cont[-1], ax=lbl[-1], orientation='vertical')
@@ -630,9 +633,10 @@ class System:
                         # norm='Normalize'
                     )
                 ]
+                rho_LaTeX = r"$\hat{\rho}^{(" + str(b) + ")}$"
                 lbl += [
                     (
-                        axes[b - 1, o].set_title(f"{o}"),
+                        axes[b - 1, o].set_title(rho_LaTeX),
                         axes[b - 1, o].set_ylabel(None),
                     )
                 ]
@@ -644,7 +648,7 @@ class System:
                     c.set_edgecolor("face")
 
         fig.tight_layout()
-        plt.savefig(f"{self.N} {self.bomb_config} Wigner.pdf")
+        plt.savefig(f"Wigner.pdf")
         plt.show()
 
 
@@ -662,7 +666,7 @@ if __name__ == "__main__":
     ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½ ⅔½½
     """
     # for bomb_config in "10 100 1000 ½0 ½00 ½000 ⅓0 ⅓00 ⅓000 ½½ ½½½".split():
-    for bomb_config in "10".split():
+    for bomb_config in "O⅓0".split():
         system = System(bomb_config, "0" + "1" * len(bomb_config))
         system()
         coeffs = system.coeffs
@@ -675,7 +679,7 @@ if __name__ == "__main__":
         # system.decompose_linear()
         # matrix = system.matrix
         report = system.report
-        system.plot_report(100, optimize_pdf=False)
+        system.plot_report(100, optimize_pdf=True)
 
 
 # %%
