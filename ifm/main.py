@@ -531,6 +531,7 @@ class System:
 
         fig, axes = plt.subplots(N, N + 1, figsize=(4 * N, 4 * N))
 
+        # ### Diagonal in the Fock basis
         # Plot the diagonals of the Fock density matrix of each bomb. For each
         # such plot, mention the purity of the state.
         for b in range(1, N + 1):
@@ -580,11 +581,12 @@ class System:
                 axes[b - 1, o].set_xlim([-0.5, 1.5])
 
         fig.tight_layout()
-        plt.savefig(f"Fock.pdf")
+        plt.savefig(f"Fock {self.bomb_config}.pdf")
         plt.show()
 
+        # ### Wigner function
         # Do the same as the above, but now plot the Wigner functions instead.
-        xvec = np.linspace(-3, 3, resolution)
+        xvec = np.linspace(-2.7, 2.7, resolution)
         fig, axes = plt.subplots(N, N + 1, figsize=(4 * N, 4 * N))
 
         (vmin, vmax) = (-0.2, 0.32)
@@ -612,9 +614,12 @@ class System:
             lbl += [
                 (
                     axes[b - 1, 0].set_title(rho_LaTeX),
-                    axes[b - 1, 0].set_ylabel(None),
+                    axes[b - 1, 0].set_ylabel(r"$p$"),
+                    axes[b - 1, 0].set_xlabel(r"$q$"),
                 )
             ]
+            if b == N:
+                axes[b - 1, o].set_xlabel(r"$q$")
             # fig.colorbar(cont[-1], ax=lbl[-1], orientation='vertical')
             for o in range(1, N + 1):
                 cont += [
@@ -633,13 +638,15 @@ class System:
                         # norm='Normalize'
                     )
                 ]
-                rho_LaTeX = r"$\hat{\rho}^{(" + str(b) + ")}$"
+                rho_LaTeX = r"$\hat{\rho}^{(" + str(b) + ")}_{" + str(o) + "}$"
                 lbl += [
                     (
                         axes[b - 1, o].set_title(rho_LaTeX),
                         axes[b - 1, o].set_ylabel(None),
                     )
                 ]
+                if b == N:
+                    axes[b - 1, o].set_xlabel(r"$q$")
                 # fig.colorbar(cont[-1], ax=lbl[-1], orientation='vertical')
 
         if optimize_pdf:
@@ -648,7 +655,7 @@ class System:
                     c.set_edgecolor("face")
 
         fig.tight_layout()
-        plt.savefig(f"Wigner.pdf")
+        plt.savefig(f"Wigner {self.bomb_config}.pdf")
         plt.show()
 
 
@@ -665,21 +672,25 @@ if __name__ == "__main__":
     """
     ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½ ⅔½½
     """
+    system = dict()
     # for bomb_config in "10 100 1000 ½0 ½00 ½000 ⅓0 ⅓00 ⅓000 ½½ ½½½".split():
-    for bomb_config in "O⅓0".split():
-        system = System(bomb_config, "0" + "1" * len(bomb_config))
-        system()
-        coeffs = system.coeffs
-        combis = system.combis
-        prob = system.prob
+    for (
+        bomb_config
+    ) in "O0 O00 O000 0O 00O 000O OO OOO OOOO OO0 O0O 0OO OO00 O0O0 0O0O 0OO0 00OO".split():
+        system[bomb_config] = System(bomb_config, "0" + "1" * len(bomb_config))
+        system[bomb_config]()
+        coeffs = system[bomb_config].coeffs
+        combis = system[bomb_config].combis
+        prob = system[bomb_config].prob
+        print(f"{bomb_config}:")
         print(prob)
-        # print_shapes(system)
-        # print_shapes(system)
-        # system.decompose_born()
-        # system.decompose_linear()
+        # print_shapes(system[bomb_config])
+        # print_shapes(system[bomb_config])
+        # system[bomb_config].decompose_born()
+        # system[bomb_config].decompose_linear()
         # matrix = system.matrix
-        report = system.report
-        system.plot_report(100, optimize_pdf=True)
+        report = system[bomb_config].report
+        system[bomb_config].plot_report(100, optimize_pdf=True)
 
 
 # %%
