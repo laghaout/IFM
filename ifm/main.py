@@ -32,16 +32,28 @@ DELIMITER = "·"
 # - dimension 2: the bomb is away from the photon's path.
 # This 3-dimensional vector represents a coherent superposition of these 3
 # "orthogonal" possibilities.
+jaja = 1e-1
 BOMB_DICT = {
     # Completely away from the photon's path
     "0": (np.array([0, 0, 1]), r"$\ket{0}$"),
     #  Completely on the photon's path
     "1": (np.array([0, 1, 0]), r"$\ket{1}$"),
+    #
+    "S": (
+        np.array([0, 1 - jaja, jaja]) / np.sqrt(1 - 2 * jaja + 2 * jaja**2),
+        r"$\sqrt{\epsilon}\ket{0} + \sqrt{1-\epsilon}\ket{1}$",
+    ),
     # "Asymptotically close" to being completely on the photon's path
     "O": (
         np.array([0, 1 - qi.TOL, qi.TOL])
         / np.sqrt(1 - 2 * qi.TOL + 2 * qi.TOL**2),
         r"$\sqrt{\epsilon}\ket{0} + \sqrt{1-\epsilon}\ket{1}$",
+    ),
+    # "Asymptotically close" to being completely away from the photon's path
+    "v": (
+        np.array([0, qi.TOL, 1 - qi.TOL])
+        / np.sqrt(1 - 2 * qi.TOL + 2 * qi.TOL**2),
+        r"$\sqrt{1-\epsilon}\ket{0} + \sqrt{\epsilon}\ket{1}$",
     ),
     # In an equal, coherent superposition of being on the photon's path and
     # away from it
@@ -671,12 +683,10 @@ def print_shapes(self):
 if __name__ == "__main__":
     """
     ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½ ⅔½½
+    ⅔0 ⅔00 ⅔000 0⅔ 00⅔ 000⅔ ⅔⅔ ⅔⅔⅔ ⅔⅔⅔⅔ ⅔⅔0 ⅔0⅔ 0⅔⅔ ⅔⅔00 ⅔0⅔0 0⅔0⅔ 0⅔⅔0 00⅔⅔
     """
     system = dict()
-    # for bomb_config in "10 100 1000 ½0 ½00 ½000 ⅓0 ⅓00 ⅓000 ½½ ½½½".split():
-    for (
-        bomb_config
-    ) in "O0 O00 O000 0O 00O 000O OO OOO OOOO OO0 O0O 0OO OO00 O0O0 0O0O 0OO0 00OO".split():
+    for bomb_config in "SS0".split():
         system[bomb_config] = System(bomb_config, "0" + "1" * len(bomb_config))
         system[bomb_config]()
         coeffs = system[bomb_config].coeffs
@@ -690,7 +700,7 @@ if __name__ == "__main__":
         # system[bomb_config].decompose_linear()
         # matrix = system.matrix
         report = system[bomb_config].report
-        system[bomb_config].plot_report(100, optimize_pdf=True)
+        system[bomb_config].plot_report(100, optimize_pdf=False)
 
 
 # %%
