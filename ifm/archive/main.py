@@ -32,11 +32,17 @@ DELIMITER = "·"
 # - dimension 2: the bomb is away from the photon's path.
 # This 3-dimensional vector represents a coherent superposition of these 3
 # "orthogonal" possibilities.
+jaja = 1e-1
 BOMB_DICT = {
     # Completely away from the photon's path
     "0": (np.array([0, 0, 1]), r"$\ket{0}$"),
     #  Completely on the photon's path
     "1": (np.array([0, 1, 0]), r"$\ket{1}$"),
+    #
+    "S": (
+        np.array([0, 1 - jaja, jaja]) / np.sqrt(1 - 2 * jaja + 2 * jaja**2),
+        r"$\sqrt{\epsilon}\ket{0} + \sqrt{1-\epsilon}\ket{1}$",
+    ),
     # "Asymptotically close" to being completely on the photon's path
     "O": (
         np.array([0, 1 - qi.TOL, qi.TOL])
@@ -77,21 +83,6 @@ BOMB_DICT = pd.DataFrame(BOMB_DICT, index=["state", "LaTeX"]).T
 
 class System:
     def __init__(self, b, g=None):
-        """
-        Initialize the bomb and photon states.
-
-        Parameters
-        ----------
-        b : TYPE
-            DESCRIPTION.
-        g : TYPE, optional
-            DESCRIPTION. The default is None.
-
-        Returns
-        -------
-        None.
-
-        """
         # Tuple of bomb states
         if isinstance(b, str):
             self.bomb_config = b
@@ -695,7 +686,7 @@ if __name__ == "__main__":
     ⅔0 ⅔00 ⅔000 0⅔ 00⅔ 000⅔ ⅔⅔ ⅔⅔⅔ ⅔⅔⅔⅔ ⅔⅔0 ⅔0⅔ 0⅔⅔ ⅔⅔00 ⅔0⅔0 0⅔0⅔ 0⅔⅔0 00⅔⅔
     """
     system = dict()
-    for bomb_config in "½0⅔½".split():
+    for bomb_config in "½0⅔".split():
         system[bomb_config] = System(bomb_config, "0" + "1" * len(bomb_config))
         system[bomb_config]()
         coeffs = system[bomb_config].coeffs
@@ -715,24 +706,3 @@ if __name__ == "__main__":
 # %%
 # system.prob = pd.DataFrame({"probability": system.prob.values}, index=system.prob.index)
 # sns.barplot(data=system.prob, x="")
-
-
-def foo(N):
-    modes = list(range(1, N + 1))
-    P = {f"{k}": 0 for k in modes}
-    for n in modes:
-        P[f"{n}"] += 1 - N + n
-        for m in range(n + 1, N + 1):
-            P[f"{n}{DELIMITER}{m}"] = 1
-            P[f"{m}"] -= 1
-
-    df = pd.DataFrame.from_dict(P, orient="index", columns=["weight"])
-    # df['weight'] = df.apply(lambda x: x.name, axis=1)
-
-    return df
-
-
-N = 10
-A = System.Born_decomposition(N, k=2)
-B = foo(N)
-# print((A['weight'].iloc[1:] + B['weight']).sum())

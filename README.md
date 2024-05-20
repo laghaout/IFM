@@ -1,32 +1,39 @@
 
 # Table of Contents
 
-1.  [Observations ⅓ ½ ⅔](#org071ca7b)
-        1.  [More&#x2026;](#org20c6893)
-2.  [Review <code>[0/4]</code>](#orge5b5e33)
-3.  [To-do <code>[1/13]</code>](#org5b12948)
+1.  [Observations ⅓ ½ ⅔ <code>[2/3]</code>](#org108cadd)
+        1.  [More&#x2026;](#org4dbceeb)
+2.  [Review <code>[0/4]</code>](#orgd00b719)
+3.  [To-do <code>[1/13]</code>](#org6677e9a)
 
 
-<a id="org071ca7b"></a>
 
-# Observations ⅓ ½ ⅔
+<a id="org108cadd"></a>
 
--   1 bomb, N-1 clear:
-    -   Main mode: Steering towards 0 while maintaining a unit purity. Weaker steering as N increases.
-    -   Dark mode: Total collapse onto 1
--   n identical bombs, N-n clear:
-    -   Main mode: Steering towards 0 but losing purity.
-    -   Dark mode: Steering towards 1 but losing purity with <some parity> collapsing totally onto 50/50.
--   N identical bombs
+# Observations ⅓ ½ ⅔ <code>[2/3]</code>
+
+-   [X] 1 bomb, N-1 clear:
     -   Main mode:
-        -   Steering towards 0 but losing purity.
-        -   The purity loss is higher for (i) higher weight on 1 in the initial state, and for (ii) smaller N.
+        -   Steering towards 0. Weaker steering as N increases.
+        -   Maintaining a unit purity.
+    -   Dark mode: Total collapse (steering?) onto 1 (and therefore unit purity)
+-   [ ] 2 identical bombs, N-2 clear:
+    -   Main mode:
+        -   Steering towards 0. Weaker steering as N increases.
+        -   Losing purity.
+    -   Dark mode: Steering towards 1 but losing purity with <some parity> collapsing totally onto 50/50.
+-   [ ] N-2 identical bombs, 2 clear
+-   [ ] N-1 identical bombs, 1 clear
+-   [X] N identical bombs, 0 clear:
+    -   Main mode:
+        -   Steering towards 0. Weaker steering as N increases
+        -   Losing purity. The purity loss is higher for (i) higher weight on 1 in the initial state, and for (ii) smaller N.
     -   Dark mode:
-        -   Partial collapse towards 50/50 regardless of initial state. Total collapse onto 50/50 if N=2.
-        -   Purity independent of the initial state.
+        -   Partial collapse towards 50/50 regardless of initial state. Total collapse onto 50/50 if N=2, gets weaker as N increases.
+        -   Purity independent of the initial state. Increases with N.
 
 
-<a id="org20c6893"></a>
+<a id="org4dbceeb"></a>
 
 ### More&#x2026;
 
@@ -35,7 +42,7 @@
 -   The purity indeed matches the pairwise mixture?
 
 
-<a id="orge5b5e33"></a>
+<a id="orgd00b719"></a>
 
 # Review <code>[0/4]</code>
 
@@ -48,7 +55,7 @@
 7.  [ ] Hardy's paradox
 
 
-<a id="org5b12948"></a>
+<a id="org6677e9a"></a>
 
 # To-do <code>[1/13]</code>
 

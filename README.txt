@@ -1,9 +1,18 @@
+#+TITLE: Interaction-free measurements and Born's rule
+
 * Observations ⅓ ½ ⅔ [2/3]
 - [X] 1 bomb, N-1 clear:
   - Main mode:
     - Steering towards 0. Weaker steering as N increases.
     - Maintaining a unit purity.
-  - Dark mode: Total collapse onto 1 (and therefore unit purity)
+  - Dark mode: Total collapse (steering?) onto 1 (and therefore unit purity)
+- [ ] 2 identical bombs, N-2 clear:
+  - Main mode:
+    - Steering towards 0. Weaker steering as N increases.
+    - Losing purity.
+  - Dark mode: Steering towards 1 but losing purity with <some parity> collapsing totally onto 50/50.
+- [ ] N-2 identical bombs, 2 clear
+- [ ] N-1 identical bombs, 1 clear
 - [X] N identical bombs, 0 clear:
   - Main mode:
     - Steering towards 0. Weaker steering as N increases
@@ -11,11 +20,6 @@
   - Dark mode:
     - Partial collapse towards 50/50 regardless of initial state. Total collapse onto 50/50 if N=2, gets weaker as N increases.
     - Purity independent of the initial state. Increases with N.
-- [ ] 2 identical bombs, N-2 clear:
-  - Main mode:
-    - Steering towards 0. Weaker steering as N increases.
-    - Losing purity.
-  - Dark mode: Steering towards 1 but losing purity with <some parity> collapsing totally onto 50/50.
 *** More...
 - Complete collapse to 1 in the dark modes
 - Phase loss (i.e., mixing) in the auxiliary modes
