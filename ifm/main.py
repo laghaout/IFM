@@ -268,33 +268,16 @@ class System:
 
         """
 
-        # List all the possible paths.
-        S = [str(s) for s in range(1, N + 1)]
+        modes = list(range(1, N + 1))
+        P = {f"{k}": 0 for k in modes}
+        for n in modes:
+            P[f"{n}"] += 1 - N + n
+            for m in range(n + 1, N + 1):
+                P[f"{n}{delimiter}{m}"] = 1
+                P[f"{m}"] -= 1
 
-        # Generate n-choose-k combinations
-        comb = combinations(S, k)
-
-        # Convert iterator to a list
-        comb_list = [delimiter.join([str(k) for k in range(1, N + 1)])]
-        comb_list += S + [delimiter.join(sorted(c)) for c in comb]
-
-        # Sort the Born components alphabetically to avoid `lexsort` warnings
-        # later on.
-        comb_list = [comb_list[0]] + sorted(comb_list[1:])
-
-        # Weights of the various components. These weights correspond to the
-        # signs in front of each term in Eq. (6) of Sinha et al.
-        weights = {f"{k}": 0 for k in comb_list}
-        weights[delimiter.join([str(k) for k in range(1, N + 1)])] = 1
-
-        for n in range(1, N + 1):
-            weights[f"{n}"] -= 1
-            for m in range(1, n):
-                weights[f"{m}{delimiter}{n}"] -= 1
-                weights[f"{n}"] += 1
-                weights[f"{m}"] += 1
-
-        df = pd.DataFrame(index=weights.keys())
+        df = pd.DataFrame.from_dict(P, orient="index", columns=["weight"])
+        df.sort_index(inplace=True)
 
         # Binary representation of the cleared paths.
         df["cleared"] = df.index.map(
@@ -302,13 +285,7 @@ class System:
                 ["1" if str(j) in x else "0" for j in range(1, N + 1)]
             )
         )
-        df["weight"] = df.index.map(lambda x: weights[x])
         df["prior"] = df.index.map(lambda x: len(x.split(delimiter)) / N)
-
-        # Add the outcome probabilities and the density matrices for each
-        # combination.
-        # df[[n for n in range(1, N + 1)]] = np.nan
-        # df["rho"] = pd.Series(None, dtype=object)
 
         return df
 
@@ -330,26 +307,6 @@ class System:
             + [("actual", "rho", c) for c in components[1:]]
             + [("actual", "purity", c) for c in components[1:]]
         )
-        for reconstruction in ("born", "linear"):
-            columns += [
-                (
-                    reconstruction,
-                    "rho",
-                ),
-                (
-                    reconstruction,
-                    "purity",
-                ),
-                (
-                    reconstruction,
-                    "fidelity",
-                ),
-            ] + [(reconstruction, "weight", c) for c in components]
-        columns += [
-            ("linear", "residuals"),
-            ("linear", "rank"),
-            ("linear", "singular_values"),
-        ]
         columns = pd.MultiIndex.from_tuples(columns)
 
         df = pd.DataFrame(columns=columns, index=index)
@@ -372,163 +329,6 @@ class System:
 
         return df
 
-    def decompose_born(self):
-        # Retrieve the number of modes.
-        N = self.N
-
-        # Prepare the reconstructed density matrix for each outcome and each
-        # bomb.
-        reconstructed_rho = {
-            n: {m: np.zeros((2, 2), dtype=complex) for m in range(1, N + 1)}
-            for n in range(1, N + 1)
-        }
-
-        # For each Born decomposition,
-        for ci, c in enumerate(self.combis.index):
-            # generate the corresponding system
-            subsystem = System(bomb_config, "0" + self.combis.at[c, "cleared"])
-            subsystem()
-
-            # and save the outcome probabilities.
-            self.combis.at[c, range(1, N + 1)] = subsystem.prob.values
-
-            # For each outcome
-            for outcome in range(1, N + 1):
-                # and each bomb
-                for bomb in range(1, N + 1):
-                    # construct the overall density matrix as per the Born
-                    # decomposition in Sinha et al. Note that we start at `ci`
-                    # greater than zero so as to exclude the case where all
-                    # modes are completely cleared. Note also that the factors
-                    # are subtracted, not added, since they're already the
-                    # negatives of what they should be. Cf. Eqs. (5) and (6) of
-                    # Sinha et al.
-                    if ci > 0:
-                        reconstructed_rho[outcome][bomb] -= (
-                            subsystem.report.loc[
-                                (outcome, bomb), ("actual", "rho", "final")
-                            ]
-                            * self.combis.at[c, "weight"]
-                            * self.combis.at[c, "prior"]
-                        )
-                        # assert qi.is_density_matrix(reconstructed_rho[outcome][bomb])
-
-                        # compute the density matrix of the pre-measurement state,
-                        self.report[("actual", "rho", c)] = self.report.apply(
-                            lambda x: subsystem.report.loc[
-                                (x.name[0], x.name[1]),
-                                ("actual", "rho", "final"),
-                            ],
-                            axis=1,
-                        )
-                        # its corresponding purity,
-                        self.report[
-                            ("actual", "purity", c)
-                        ] = self.report.apply(
-                            lambda x: qi.purity(
-                                subsystem.report.loc[
-                                    (x.name[0], x.name[1]),
-                                    ("actual", "rho", "final"),
-                                ]
-                            ),
-                            axis=1,
-                        )
-                        # as well as its coefficient. See Eq. (6) of Sinha et al.
-                        self.report[("born", "weight", c)] = -(
-                            self.combis.at[c, "weight"]
-                            * self.combis.at[c, "prior"]
-                        )
-
-        # Check the decomposed Born probabilities as per Sinha et al.
-        epsilon = self.combis[range(1, N + 1)].mul(
-            self.combis["weight"] * self.combis["prior"], axis=0
-        )
-        assert np.allclose(epsilon.sum(axis=0).values, np.zeros(N))
-
-        # TODO: Use a dot product instead of the nested loop above
-        self.report[("born", "rho", None)] = self.report.apply(
-            lambda x: reconstructed_rho[x.name[0]][x.name[1]],
-            axis=1,
-        )
-
-        self.report[("born", "purity", None)] = self.report[
-            ("born", "rho", None)
-        ].apply(lambda x: qi.purity(x) if qi.is_density_matrix(x) else np.nan)
-        self.report[("born", "fidelity", None)] = self.report.apply(
-            lambda x: qi.fidelity(
-                x[("born", "rho", None)], x[("actual", "rho", "final")]
-            )
-            if qi.is_density_matrix(x[("born", "rho", None)])
-            else np.nan,
-            axis=1,
-        )
-
-    # TODO: Consider doing the linear regression over all the bombs and
-    # outcomes at once, and not just per bomb-outcome.
-    def decompose_linear(self, delimiter=DELIMITER):
-        # Reshape the matrices as vectors
-        matrix = self.report.actual.rho.map(lambda x: x.reshape(-1, 1))
-        decompositions = self.report.linear.weight.columns
-
-        matrix["Vecs"] = matrix.apply(
-            lambda x: np.hstack([x[k] for k in decompositions]), axis=1
-        )
-        matrix.drop(decompositions, axis=1, inplace=True)
-        # matrix['res'] = matrix.apply(lambda x: x[np.nan], axis=1)
-        # x[np.nan] represents the actual rho
-        matrix["results"] = matrix.apply(
-            lambda x: np.linalg.lstsq(
-                x["Vecs"], x["final"].reshape(-1, 1), rcond=None
-            ),
-            axis=1,
-        )
-        self.matrix = matrix
-        # For each component,
-        for i, col in enumerate(decompositions):
-            # save the coefficients.
-            self.report.loc[:, ("linear", "weight", col)] = matrix[
-                "results"
-            ].apply(
-                lambda x: qi.trim_imaginary(x[0][i][0])
-            )  # x[0][c]
-
-        self.report.loc[:, ("linear", "residuals", None)] = matrix[
-            "results"
-        ].apply(lambda x: x[1])
-        self.report.loc[:, ("linear", "rank", None)] = matrix["results"].apply(
-            lambda x: x[2]
-        )
-        self.report.loc[:, ("linear", "singular_values", None)] = matrix[
-            "results"
-        ].apply(lambda x: x[3])
-
-        self.report.loc[:, ("linear", "rho", slice(None))] = self.report.apply(
-            lambda x: (
-                x[("actual", "rho")][decompositions]
-                @ x[("linear", "weight")][decompositions]
-            ),
-            axis=1,
-        )
-
-        self.report.loc[:, ("linear", "rho", slice(None))] = self.report.loc[
-            :, ("linear", "rho", slice(None))
-        ].apply(lambda x: x.values.item(), axis=1)
-
-        self.report[("linear", "purity", None)] = self.report[
-            ("linear", "rho", None)
-        ].apply(lambda x: qi.purity(x) if qi.is_density_matrix(x) else np.nan)
-        self.report[("linear", "fidelity", None)] = self.report.apply(
-            lambda x: qi.fidelity(
-                x[("actual", "rho", "final")], x[("linear", "rho", None)]
-            )
-            if qi.is_density_matrix(x[("linear", "rho", None)])
-            else np.nan,
-            axis=1,
-        )
-
-        # assert abs(self.report.linear.fidelity.sum().sum() - len(self.report)) < qi.TOL, \
-        #     "Linear combination failed: Fidelity with the output state < 1."
-
     def get_rho(
         self,
         outcome,
@@ -537,6 +337,30 @@ class System:
         rho_type="actual",
         return_type="numpy",
     ):
+        """
+        Convert the Hilbert space to the Fock Hilbert space.
+
+        Parameters
+        ----------
+        outcome : TYPE
+            DESCRIPTION.
+        bomb : TYPE
+            DESCRIPTION.
+        config : TYPE, optional
+            DESCRIPTION. The default is "final".
+        rho_type : TYPE, optional
+            DESCRIPTION. The default is "actual".
+        return_type : TYPE, optional
+            DESCRIPTION. The default is "numpy".
+         : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        rho : TYPE
+            DESCRIPTION.
+
+        """
         rho = self.report[rho_type].rho[config].loc[(outcome, bomb)].copy()
         rho = rho.T
         rho_00 = rho[0, 0]
@@ -679,13 +503,68 @@ class System:
         plt.savefig(f"Wigner {self.bomb_config}.pdf")
         plt.show()
 
+    def decompose_born(self):
+        # Retrieve the number of modes.
+        N = self.N
 
-def print_shapes(self):
-    print(f"- {self.N = }")
-    print(f"- {self.bomb_config = }")
-    print(f"- {self.BS.shape = }")
-    print(f"- {self.g.shape = }")
-    print(f"- {len(self.b) = }")
+        # Prepare the reconstructed density matrix for each outcome and each
+        # bomb.
+        reconstructed_rho = {
+            n: {m: np.zeros((2, 2), dtype=complex) for m in range(1, N + 1)}
+            for n in range(1, N + 1)
+        }
+
+        # For each Born decomposition,
+        for ci, c in enumerate(self.combis.index):
+            # generate the corresponding system
+            subsystem = System(bomb_config, "0" + self.combis.at[c, "cleared"])
+            subsystem()
+
+            # and save the outcome probabilities.
+            print("---------------------------- HERE")
+            print(subsystem.prob.values)
+            self.combis.at[c, range(1, N + 1)] = subsystem.prob
+            print("---------------------------- THERE")
+
+            # For each outcome
+            for outcome in range(1, N + 1):
+                # and each bomb
+                for bomb in range(1, N + 1):
+                    reconstructed_rho[outcome][bomb] += (
+                        subsystem.report.loc[
+                            (outcome, bomb), ("actual", "rho", "final")
+                        ]
+                        * self.combis.at[c, "weight"]
+                        * self.combis.at[c, "prior"]
+                    )
+                    assert qi.is_density_matrix(
+                        reconstructed_rho[outcome][bomb]
+                    )
+
+                    # compute the density matrix of the pre-measurement state,
+                    self.report[("actual", "rho", c)] = self.report.apply(
+                        lambda x: subsystem.report.loc[
+                            (x.name[0], x.name[1]),
+                            ("actual", "rho", "final"),
+                        ],
+                        axis=1,
+                    )
+                    # its corresponding purity,
+                    self.report[("actual", "purity", c)] = self.report.apply(
+                        lambda x: qi.purity(
+                            subsystem.report.loc[
+                                (x.name[0], x.name[1]),
+                                ("actual", "rho", "final"),
+                            ]
+                        ),
+                        axis=1,
+                    )
+
+        # Check the decomposed Born probabilities as per Sinha et al.
+        epsilon = self.combis[range(1, N + 1)].mul(
+            self.combis["weight"] * self.combis["prior"], axis=0
+        )
+        assert np.allclose(epsilon.sum(axis=0).values, np.zeros(N))
 
 
 # %% Run as a script, not as a module.
@@ -694,45 +573,18 @@ if __name__ == "__main__":
     ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½ ⅔½½
     ⅔0 ⅔00 ⅔000 0⅔ 00⅔ 000⅔ ⅔⅔ ⅔⅔⅔ ⅔⅔⅔⅔ ⅔⅔0 ⅔0⅔ 0⅔⅔ ⅔⅔00 ⅔0⅔0 0⅔0⅔ 0⅔⅔0 00⅔⅔
     """
-    system = dict()
-    for bomb_config in "½0⅔½".split():
-        system[bomb_config] = System(bomb_config, "0" + "1" * len(bomb_config))
-        system[bomb_config]()
-        coeffs = system[bomb_config].coeffs
-        combis = system[bomb_config].combis
-        prob = system[bomb_config].prob
+    systems = dict()
+    for bomb_config in "½0⅔".split():
+        systems[bomb_config] = System(
+            bomb_config, "0" + "1" * len(bomb_config)
+        )
+        systems[bomb_config]()
+        coeffs = systems[bomb_config].coeffs
+        combis = systems[bomb_config].combis
+        prob = systems[bomb_config].prob
         print(f"{bomb_config}:")
         print(prob)
-        # print_shapes(system[bomb_config])
-        # print_shapes(system[bomb_config])
-        # system[bomb_config].decompose_born()
-        # system[bomb_config].decompose_linear()
-        # matrix = system.matrix
-        report = system[bomb_config].report
+        report = systems[bomb_config].report
         # system[bomb_config].plot_report(100, optimize_pdf=False)
 
-
-# %%
-# system.prob = pd.DataFrame({"probability": system.prob.values}, index=system.prob.index)
-# sns.barplot(data=system.prob, x="")
-
-
-def foo(N):
-    modes = list(range(1, N + 1))
-    P = {f"{k}": 0 for k in modes}
-    for n in modes:
-        P[f"{n}"] += 1 - N + n
-        for m in range(n + 1, N + 1):
-            P[f"{n}{DELIMITER}{m}"] = 1
-            P[f"{m}"] -= 1
-
-    df = pd.DataFrame.from_dict(P, orient="index", columns=["weight"])
-    # df['weight'] = df.apply(lambda x: x.name, axis=1)
-
-    return df
-
-
-N = 10
-A = System.Born_decomposition(N, k=2)
-B = foo(N)
-# print((A['weight'].iloc[1:] + B['weight']).sum())
+        systems[bomb_config].decompose_born()
