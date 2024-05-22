@@ -9,7 +9,6 @@ interferometers where the bombs can be in a superposition of being on the path
 and away from the path.
 """
 
-from itertools import combinations
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -515,56 +514,41 @@ class System:
         }
 
         # For each Born decomposition,
-        for ci, c in enumerate(self.combis.index):
+        for c in self.combis.index:
             # generate the corresponding system
             subsystem = System(bomb_config, "0" + self.combis.at[c, "cleared"])
             subsystem()
 
-            # and save the outcome probabilities.
-            print("---------------------------- HERE")
-            print(subsystem.prob.values)
-            self.combis.at[c, range(1, N + 1)] = subsystem.prob
-            print("---------------------------- THERE")
+            # save the outcome probabilities, and
+            self.combis.at[c, range(1, N + 1)] = subsystem.prob["probability"]
+            assert (
+                np.round(qi.trim_imaginary(subsystem.g @ subsystem.g), qi.DEC)
+                == 1
+            )
 
-            # For each outcome
-            for outcome in range(1, N + 1):
-                # and each bomb
-                for bomb in range(1, N + 1):
-                    reconstructed_rho[outcome][bomb] += (
-                        subsystem.report.loc[
-                            (outcome, bomb), ("actual", "rho", "final")
-                        ]
-                        * self.combis.at[c, "weight"]
-                        * self.combis.at[c, "prior"]
-                    )
-                    assert qi.is_density_matrix(
-                        reconstructed_rho[outcome][bomb]
-                    )
+            # compute the density matrix of the pre-measurement state,
+            self.report[("actual", "rho", c)] = self.report.apply(
+                lambda x: subsystem.report.loc[
+                    (x.name[0], x.name[1]),
+                    ("actual", "rho", "final"),
+                ],
+                axis=1,
+            )
+            for x in self.report[("actual", "rho", c)]:
+                assert qi.is_density_matrix(x)
 
-                    # compute the density matrix of the pre-measurement state,
-                    self.report[("actual", "rho", c)] = self.report.apply(
-                        lambda x: subsystem.report.loc[
-                            (x.name[0], x.name[1]),
-                            ("actual", "rho", "final"),
-                        ],
-                        axis=1,
-                    )
-                    # its corresponding purity,
-                    self.report[("actual", "purity", c)] = self.report.apply(
-                        lambda x: qi.purity(
-                            subsystem.report.loc[
-                                (x.name[0], x.name[1]),
-                                ("actual", "rho", "final"),
-                            ]
-                        ),
-                        axis=1,
-                    )
+            # along with its corresponding purity.
+            self.report[("actual", "purity", c)] = self.report[
+                ("actual", "rho", c)
+            ].apply(qi.purity)
 
         # Check the decomposed Born probabilities as per Sinha et al.
-        epsilon = self.combis[range(1, N + 1)].mul(
-            self.combis["weight"] * self.combis["prior"], axis=0
+        epsilon = (
+            self.combis[range(1, N + 1)]
+            .mul(self.combis["weight"] * self.combis["prior"], axis=0)
+            .sum(axis=0)
         )
-        assert np.allclose(epsilon.sum(axis=0).values, np.zeros(N))
+        assert np.allclose(epsilon.values, self.prob["probability"])
 
 
 # %% Run as a script, not as a module.
