@@ -21,57 +21,8 @@ plt.rcParams["text.latex.preamble"] = " ".join(
     [r"\usepackage{amsmath}", r"\usepackage{braket}"]
 )
 
-ROUND = 4  # Number of decimal points to display when rounding
-DELIMITER = "·"
 
-# Shorthand for representing the quantum states of the bombs as single
-# characters. The dimensions of this "bomb Hilbert space" are as follows:
-# - dimension 0: the bomb has exploded
-# - dimension 1: the bomb is on the photon's path
-# - dimension 2: the bomb is away from the photon's path.
-# This 3-dimensional vector represents a coherent superposition of these 3
-# "orthogonal" possibilities.
-BOMB_DICT = {
-    # Completely away from the photon's path
-    "0": (np.array([0, 0, 1]), r"$\ket{0}$"),
-    #  Completely on the photon's path
-    "1": (np.array([0, 1, 0]), r"$\ket{1}$"),
-    # "Asymptotically close" to being completely on the photon's path
-    "O": (
-        np.array([0, 1 - qi.TOL, qi.TOL])
-        / np.sqrt(1 - 2 * qi.TOL + 2 * qi.TOL**2),
-        r"$\sqrt{\epsilon}\ket{0} + \sqrt{1-\epsilon}\ket{1}$",
-    ),
-    # "Asymptotically close" to being completely away from the photon's path
-    "v": (
-        np.array([0, qi.TOL, 1 - qi.TOL])
-        / np.sqrt(1 - 2 * qi.TOL + 2 * qi.TOL**2),
-        r"$\sqrt{1-\epsilon}\ket{0} + \sqrt{\epsilon}\ket{1}$",
-    ),
-    # In an equal, coherent superposition of being on the photon's path and
-    # away from it
-    "½": (
-        np.array([0, 1, 1]) / np.sqrt(2),
-        r"$\frac{1}{\sqrt{2}}(\ket{0} + \ket{1})$",
-    ),
-    # Other superpositions of being on and away from the photon's path…
-    "⅓": (
-        np.array([0, 1, np.sqrt(2)]) / np.sqrt(3),
-        r"$\sqrt{\frac{2}{3}}\ket{0} + \frac{1}{\sqrt{3}}\ket{1}$",
-    ),
-    "⅔": (
-        np.array([0, np.sqrt(2), 1]) / np.sqrt(3),
-        r"$\frac{1}{\sqrt{3}}(\ket{0} + \sqrt{\frac{2}{3}}\ket{1})$",
-    ),
-    "h": (
-        np.array([0, 1, 1j]) / np.sqrt(2),
-        r"$\frac{1}{\sqrt{2}}(i\ket{0} + \ket{1})$",
-    ),
-}
-
-BOMB_DICT = pd.DataFrame(BOMB_DICT, index=["state", "LaTeX"]).T
-
-# %%
+# %% System class
 
 
 class System:
@@ -95,8 +46,8 @@ class System:
         if isinstance(b, str):
             self.bomb_config = b
             self.b = tuple(
-                # BOMB_DICT[bomb]
-                BOMB_DICT.loc[bomb, "state"]
+                # qi.BOMB_DICT[bomb]
+                qi.BOMB_DICT.loc[bomb, "state"]
                 for bomb in b
             )
         else:
@@ -241,15 +192,15 @@ class System:
         self.prob = self.coeffs.apply(
             lambda y: qi.trim_imaginary(np.conj(y) @ y, qi.TOL), axis=0
         )
-        self.prob = pd.DataFrame(
-            dict(probability=self.prob.values), index=self.prob.index
+        self.prob = pd.Series(
+            self.prob.values, name="probability", index=self.prob.index
         )
 
         # Normalize the whole state.
-        self.coeffs /= np.sqrt(self.prob.probability)
+        self.coeffs /= np.sqrt(self.prob)
 
     @staticmethod
-    def Born_decomposition(N, k=2, delimiter=DELIMITER, sort=True):
+    def Born_decomposition(N, k=2, delimiter=qi.DELIMITER, sort=True):
         """
         Decompose the modes as per Born's rule.
 
@@ -289,8 +240,6 @@ class System:
         return df
 
     def prep_report(self, bombs):
-        components = ["initial"] + self.combis.index[1:].to_list()
-
         rangeN = list(range(1, self.N + 1))
         index = pd.MultiIndex.from_product(
             [rangeN] * 2, names=["outcome", "bomb"]
@@ -303,8 +252,8 @@ class System:
                 ("actual", "rho", "final"),
                 ("actual", "purity", "final"),
             ]
-            + [("actual", "rho", c) for c in components[1:]]
-            + [("actual", "purity", c) for c in components[1:]]
+            + [("actual", "rho", c) for c in self.combis.index]
+            + [("actual", "purity", c) for c in self.combis.index]
         )
         columns = pd.MultiIndex.from_tuples(columns)
 
@@ -393,9 +342,9 @@ class System:
                 axes[b - 1, 0].set_xlabel("Fock diagonal")
             else:
                 axes[b - 1, 0].set_xlabel(None)
-            axes[b - 1, 0].set_ylabel(f"probability")
+            axes[b - 1, 0].set_ylabel("probability")
             rho_LaTeX = r"$\hat{\rho}^{(" + str(b) + ")}$ = "
-            rho_LaTeX += BOMB_DICT.loc[self.bomb_config[b - 1]].LaTeX
+            rho_LaTeX += qi.BOMB_DICT.loc[self.bomb_config[b - 1]].LaTeX
             axes[b - 1, 0].set_title(rho_LaTeX)
             axes[b - 1, 0].set_xticks(np.arange(-1, 3, 1))
             axes[b - 1, 0].set_xlim([-0.5, 1.5])
@@ -419,7 +368,7 @@ class System:
                 axes[b - 1, o].set_ylabel(None)
                 rho_LaTeX = r"$\hat{\rho}^{(" + str(b) + ")}_{" + str(o) + "}$"
                 axes[b - 1, o].set_title(
-                    f"{rho_LaTeX}, purity = {np.round(purity, ROUND)}"
+                    f"{rho_LaTeX}, purity = {np.round(purity, qi.ROUND)}"
                 )
                 axes[b - 1, o].set_xticks(np.arange(-1, 3, 1))
                 axes[b - 1, o].set_xlim([-0.5, 1.5])
@@ -454,7 +403,7 @@ class System:
                 )
             ]
             rho_LaTeX = r"$\hat{\rho}^{(" + str(b) + ")}$ = "
-            rho_LaTeX += BOMB_DICT.loc[self.bomb_config[b - 1]].LaTeX
+            rho_LaTeX += qi.BOMB_DICT.loc[self.bomb_config[b - 1]].LaTeX
             lbl += [
                 (
                     axes[b - 1, 0].set_title(rho_LaTeX),
@@ -515,18 +464,21 @@ class System:
 
         # For each Born decomposition,
         for c in self.combis.index:
-            # generate the corresponding system
+            # generate the corresponding system,
             subsystem = System(bomb_config, "0" + self.combis.at[c, "cleared"])
             subsystem()
 
-            # save the outcome probabilities, and
-            self.combis.at[c, range(1, N + 1)] = subsystem.prob["probability"]
+            # check that its photon states are normalized,
             assert (
                 np.round(qi.trim_imaginary(subsystem.g @ subsystem.g), qi.DEC)
                 == 1
             )
 
-            # compute the density matrix of the pre-measurement state,
+            # save the outcome probabilities,
+            self.combis.at[c, range(1, N + 1)] = subsystem.prob
+
+            # compute the density matrix of the post-photon-measurement state
+            # of the bomb,
             self.report[("actual", "rho", c)] = self.report.apply(
                 lambda x: subsystem.report.loc[
                     (x.name[0], x.name[1]),
@@ -542,13 +494,29 @@ class System:
                 ("actual", "rho", c)
             ].apply(qi.purity)
 
-        # Check the decomposed Born probabilities as per Sinha et al.
+        # Check Born's rule as per Sinha et al.
         epsilon = (
             self.combis[range(1, N + 1)]
             .mul(self.combis["weight"] * self.combis["prior"], axis=0)
             .sum(axis=0)
         )
-        assert np.allclose(epsilon.values, self.prob["probability"])
+        assert np.allclose(epsilon.values, self.prob)
+
+        # Check that the same decomposition also applies to the density
+        # matrices.
+        self.epsilon = dict()
+        self.report[("Born", "rho", "reconstructed")] = 1
+        for k in range(1, self.N + 1):
+            A = self.report.xs(key=k, level=1).actual.rho[self.combis.index]
+            epsilon = self.combis["weight"] * self.combis["prior"]
+            epsilon = A @ epsilon
+            epsilon.apply(qi.is_density_matrix)
+            self.epsilon[k] = epsilon
+
+        # self.epsilon = (
+        #     self.combis[range(1, N + 1)]
+        #     .mul(self.combis["weight"] * self.combis["prior"], axis=0)
+        #     .sum(axis=0)
 
 
 # %% Run as a script, not as a module.
@@ -568,7 +536,7 @@ if __name__ == "__main__":
         prob = systems[bomb_config].prob
         print(f"{bomb_config}:")
         print(prob)
-        report = systems[bomb_config].report
-        # system[bomb_config].plot_report(100, optimize_pdf=False)
-
         systems[bomb_config].decompose_born()
+        report = systems[bomb_config].report
+        # systems[bomb_config].plot_report(100, optimize_pdf=False)
+        epsilon = systems[bomb_config].epsilon
