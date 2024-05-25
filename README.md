@@ -1,14 +1,15 @@
 
 # Table of Contents
 
-1.  [Observations ⅓ ½ ⅔ <code>[2/3]</code>](#org108cadd)
-        1.  [More&#x2026;](#org4dbceeb)
-2.  [Review <code>[0/4]</code>](#orgd00b719)
-3.  [To-do <code>[1/13]</code>](#org6677e9a)
+1.  [Observations ⅓ ½ ⅔ <code>[2/3]</code>](#org3903dc1)
+        1.  [More&#x2026;](#org33c0754)
+2.  [Review <code>[0/4]</code>](#orgba5a056)
+3.  [To-do <code>[1/13]</code>](#org07fcefa)
+
+Saturday, May 25, 2024 at 11:40
 
 
-
-<a id="org108cadd"></a>
+<a id="org3903dc1"></a>
 
 # Observations ⅓ ½ ⅔ <code>[2/3]</code>
 
@@ -33,7 +34,7 @@
         -   Purity independent of the initial state. Increases with N.
 
 
-<a id="org4dbceeb"></a>
+<a id="org33c0754"></a>
 
 ### More&#x2026;
 
@@ -42,7 +43,7 @@
 -   The purity indeed matches the pairwise mixture?
 
 
-<a id="orgd00b719"></a>
+<a id="orgba5a056"></a>
 
 # Review <code>[0/4]</code>
 
@@ -55,28 +56,29 @@
 7.  [ ] Hardy's paradox
 
 
-<a id="org6677e9a"></a>
+<a id="org07fcefa"></a>
 
 # To-do <code>[1/13]</code>
 
-1.  [ ] Try the heuristic from page 58.
-2.  [ ] Try a constrained solver from scipy. See ChatGPT from March 17.
-3.  [X] sha256 to see the different states that are generated from the components
-4.  [ ] Try other distance measures: Quantum Relative Entropy, Trace Distance, and Bures Distance. Only use them if available from QuTiP.
-5.  [ ] What happens with N-choose-k, for k > 2 when doing the Born decomposition?
-6.  [ ] In addition to `born` and `linear`, try heuristic decomposition I had on page 58.
-7.  [ ] Check that it works for non-equal superpositions
-8.  [ ] Check the `predicted_purity()` with `bee` and not just `eee`. Also, why is the "main" different? How can we predict its purity?
-9.  [ ] Verify all the math by hand with a general expression and write an alternative `=__call__()` class.
-10. [ ] Check all the code
-11. [ ] Order of the interactions
-12. [ ] Graph over N
-13. [-] Report data frame with
+1.  [ ] `weight * prior * probability`
+2.  [ ] Try the heuristic from page 58.
+3.  [ ] Try a constrained solver from scipy. See ChatGPT from March 17.
+4.  [X] sha256 to see the different states that are generated from the components
+5.  [ ] Try other distance measures: Quantum Relative Entropy, Trace Distance, and Bures Distance. Only use them if available from QuTiP.
+6.  [ ] What happens with N-choose-k, for k > 2 when doing the Born decomposition?
+7.  [ ] In addition to `born` and `linear`, try heuristic decomposition I had on page 58.
+8.  [ ] Check that it works for non-equal superpositions
+9.  [ ] Check the `predicted_purity()` with `bee` and not just `eee`. Also, why is the "main" different? How can we predict its purity?
+10. [ ] Verify all the math by hand with a general expression and write an alternative `=__call__()` class.
+11. [ ] Check all the code
+12. [ ] Order of the interactions
+13. [ ] Graph over N
+14. [-] Report data frame with
     -   [X] Purities
     -   [X] Probabilities
     -   [X] Diagonal measurements for the bombs
     -   [ ] Fidelity
     -   [ ] Hilbert-Schmidt inner product
-14. [ ] Comment
-15. [ ] Vanilla-ize. Rename \`ifm\` to \`IFM\` for the repo name?
+15. [ ] Comment
+16. [ ] Vanilla-ize. Rename \`ifm\` to \`IFM\` for the repo name?
 

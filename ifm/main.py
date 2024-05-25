@@ -254,6 +254,7 @@ class System:
             ]
             + [("actual", "rho", c) for c in self.combis.index]
             + [("actual", "purity", c) for c in self.combis.index]
+            + [("Born", "rho", "final")]
         )
         columns = pd.MultiIndex.from_tuples(columns)
 
@@ -307,7 +308,6 @@ class System:
         -------
         rho : TYPE
             DESCRIPTION.
-
         """
         rho = self.report[rho_type].rho[config].loc[(outcome, bomb)].copy()
         rho = rho.T
@@ -504,29 +504,66 @@ class System:
 
         # Check that the same decomposition also applies to the density
         # matrices.
-        self.epsilon = dict()
-        self.report[("Born", "rho", "reconstructed")] = 1
-        for k in range(1, self.N + 1):
-            A = self.report.xs(key=k, level=1).actual.rho[self.combis.index]
-            epsilon = self.combis["weight"] * self.combis["prior"]
-            epsilon = A @ epsilon
-            epsilon.apply(qi.is_density_matrix)
-            self.epsilon[k] = epsilon
+        # decompositions = self.report.actual.rho[self.combis.index]
+        # weights = self.combis["weight"] * self.combis["prior"]
+        # self.report[("Born", "rho", "reconstructed")] = decompositions @ weights
 
-        # self.epsilon = (
-        #     self.combis[range(1, N + 1)]
-        #     .mul(self.combis["weight"] * self.combis["prior"], axis=0)
-        #     .sum(axis=0)
+        for outcome in self.report.index:
+            self.report[("Born", "rho", "final")].at[
+                (outcome,)
+            ] = self.report.actual.rho.loc[outcome, self.combis.index] @ (
+                self.combis.weight
+                * self.combis.prior
+                * self.combis[outcome[0]]
+                / self.prob[outcome[0]]
+            )
+
+        self.report[("Born", "rho", "fidelity")] = self.report.apply(
+            lambda x: qi.fidelity(
+                x[("Born", "rho", "final")], x[("actual", "rho", "final")]
+            ),
+            axis=1,
+        )
+
+        def assertion(x, print_only=False, tol=qi.TOL):
+            if print_only:
+                print(
+                    "Denisty matrix?",
+                    qi.is_density_matrix(x[("Born", "rho", "final")]),
+                )
+                print(
+                    "Fidelity?",
+                    qi.fidelity(
+                        x[("Born", "rho", "final")],
+                        x[("actual", "rho", "final")],
+                    ),
+                )
+            else:
+                assert qi.is_density_matrix(x[("Born", "rho", "final")])
+                assert (
+                    abs(
+                        qi.fidelity(
+                            x[("Born", "rho", "final")],
+                            x[("actual", "rho", "final")],
+                        )
+                        - 1
+                    )
+                    < tol
+                )
+
+        self.report.apply(lambda x: assertion(x, False, tol=1e-8), axis=1)
 
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
     """
-    ½½½ ½½½½ ⅓t½ ⅓1½ ⅓t½½ ⅓t½⅓ ⅓t½⅓½ ½0 10 100 ⅓t½½ ⅓t½ ⅓th½0T ⅓½½ ⅔½½
+    ½½½ ½½½½ ⅓0½ ⅓O½ ⅓O½½ ⅓O½⅓ ⅓O½⅓½ ½0 O0 O00 ⅓O½½ ⅓O½ ⅓vh½0h ⅓½½ ⅔½½
     ⅔0 ⅔00 ⅔000 0⅔ 00⅔ 000⅔ ⅔⅔ ⅔⅔⅔ ⅔⅔⅔⅔ ⅔⅔0 ⅔0⅔ 0⅔⅔ ⅔⅔00 ⅔0⅔0 0⅔0⅔ 0⅔⅔0 00⅔⅔
     """
     systems = dict()
-    for bomb_config in "½0⅔".split():
+    for (
+        bomb_config
+    ) in "½0 0½ 0000½ ½½½ ½½½½ ⅓0½ ⅓O½ ⅓O½½ ⅓O½⅓ ⅓O½⅓½ ½0 O0 O00 ⅓O½½ ⅓O½ ⅓vh½0h ⅓½½ ⅔½½".split():
         systems[bomb_config] = System(
             bomb_config, "0" + "1" * len(bomb_config)
         )
@@ -539,4 +576,9 @@ if __name__ == "__main__":
         systems[bomb_config].decompose_born()
         report = systems[bomb_config].report
         # systems[bomb_config].plot_report(100, optimize_pdf=False)
-        epsilon = systems[bomb_config].epsilon
+
+# %%
+
+# for out in report.index:
+#     A = report.actual.rho.loc[out, combis.index] @ (combis.weight * combis.prior * combis[out[0]] / prob[out[0]])
+#     print(f"{out} = {qi.fidelity(A, report.actual.rho.loc[out, 'final'])} ({qi.is_density_matrix(A)})")

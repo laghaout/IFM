@@ -1,5 +1,7 @@
 #+TITLE: Interaction-free measurements and Born's rule
 
+Saturday, May 25, 2024 at 11:40
+
 * Observations ⅓ ½ ⅔ [2/3]
 - [X] 1 bomb, N-1 clear:
   - Main mode:
@@ -33,23 +35,24 @@
 6. [ ] The two archive papers mentioned by Larsson
 7. [ ] Hardy's paradox
 * To-do [1/13]
-1. [ ] Try the heuristic from page 58.
-2. [ ] Try a constrained solver from scipy. See ChatGPT from March 17.
-3. [X] sha256 to see the different states that are generated from the components
-4. [ ] Try other distance measures: Quantum Relative Entropy, Trace Distance, and Bures Distance. Only use them if available from QuTiP.
-5. [ ] What happens with N-choose-k, for k > 2 when doing the Born decomposition?
-6. [ ] In addition to =born= and =linear=, try heuristic decomposition I had on page 58.
-7. [ ] Check that it works for non-equal superpositions
-8. [ ] Check the =predicted_purity()= with =bee= and not just =eee=. Also, why is the "main" different? How can we predict its purity?
-9. [ ] Verify all the math by hand with a general expression and write an alternative ==__call__()= class.
-10. [ ] Check all the code
-11. [ ] Order of the interactions
-12. [ ] Graph over N
-13. [-] Report data frame with
+1. [ ] =weight * prior * probability=
+2. [ ] Try the heuristic from page 58.
+3. [ ] Try a constrained solver from scipy. See ChatGPT from March 17.
+4. [X] sha256 to see the different states that are generated from the components
+5. [ ] Try other distance measures: Quantum Relative Entropy, Trace Distance, and Bures Distance. Only use them if available from QuTiP.
+6. [ ] What happens with N-choose-k, for k > 2 when doing the Born decomposition?
+7. [ ] In addition to =born= and =linear=, try heuristic decomposition I had on page 58.
+8. [ ] Check that it works for non-equal superpositions
+9. [ ] Check the =predicted_purity()= with =bee= and not just =eee=. Also, why is the "main" different? How can we predict its purity?
+10. [ ] Verify all the math by hand with a general expression and write an alternative ==__call__()= class.
+11. [ ] Check all the code
+12. [ ] Order of the interactions
+13. [ ] Graph over N
+14. [-] Report data frame with
     - [X] Purities
     - [X] Probabilities
     - [X] Diagonal measurements for the bombs
     - [ ] Fidelity
     - [ ] Hilbert-Schmidt inner product
-14. [ ] Comment
-15. [ ] Vanilla-ize. Rename `ifm` to `IFM` for the repo name?
+15. [ ] Comment
+16. [ ] Vanilla-ize. Rename `ifm` to `IFM` for the repo name?
