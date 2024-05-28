@@ -557,13 +557,11 @@ class System:
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
     """
-    ½½½ ½½½½ ⅓0½ ⅓O½ ⅓O½½ ⅓O½⅓ ⅓O½⅓½ ½0 O0 O00 ⅓O½½ ⅓O½ ⅓vh½0h ⅓½½ ⅔½½
+    ½0 0½ 0000½ ½½½ ½½½½ ⅓0½ ⅓O½ ⅓O½½ ⅓O½⅓ ⅓O½⅓½ ½0 O0 O00 ⅓O½½ ⅓O½ ⅓vh½0h ⅓½½ ⅔½½
     ⅔0 ⅔00 ⅔000 0⅔ 00⅔ 000⅔ ⅔⅔ ⅔⅔⅔ ⅔⅔⅔⅔ ⅔⅔0 ⅔0⅔ 0⅔⅔ ⅔⅔00 ⅔0⅔0 0⅔0⅔ 0⅔⅔0 00⅔⅔
     """
     systems = dict()
-    for (
-        bomb_config
-    ) in "½0 0½ 0000½ ½½½ ½½½½ ⅓0½ ⅓O½ ⅓O½½ ⅓O½⅓ ⅓O½⅓½ ½0 O0 O00 ⅓O½½ ⅓O½ ⅓vh½0h ⅓½½ ⅔½½".split():
+    for bomb_config in "½½½½½".split():
         systems[bomb_config] = System(
             bomb_config, "0" + "1" * len(bomb_config)
         )
@@ -579,6 +577,72 @@ if __name__ == "__main__":
 
 # %%
 
-# for out in report.index:
-#     A = report.actual.rho.loc[out, combis.index] @ (combis.weight * combis.prior * combis[out[0]] / prob[out[0]])
-#     print(f"{out} = {qi.fidelity(A, report.actual.rho.loc[out, 'final'])} ({qi.is_density_matrix(A)})")
+
+def matrix2hash(matrix, encoding="utf-8", sha_round=4):
+    import hashlib
+
+    matrix = str(np.round(matrix.reshape(-1, 1), sha_round))
+
+    # Convert the string to bytes
+    input_bytes = matrix.encode(encoding)
+
+    # Create a sha256 hash object
+    hash_object = hashlib.sha256(input_bytes)
+
+    # Generate the hexadecimal representation of the SHA hash
+    sha_value = hash_object.hexdigest()
+
+    return sha_value[-sha_round:]
+
+
+def matrices2hashes(matrices, combis, sep=":"):
+    matrices = matrices.copy()
+    initial = {k[1]: f"i{k[0]}" for k in matrices.initial.loc[(1,)].items()}
+    vertical = matrices.apply(lambda x: set(x), axis=0)
+    horizontal = matrices.apply(lambda x: set(x), axis=1)
+
+    matrices[combis] = matrices[combis].apply(
+        lambda x: x + sep + x.index, axis=1
+    )
+    matrices["bomb"] = matrices.index.map(lambda x: str(x[1]))
+    matrices[combis] = matrices.apply(
+        lambda x: pd.Series([k + sep + x["bomb"] for k in x[combis]]), axis=1
+    )
+    matrices.drop("bomb", axis=1, inplace=True)
+
+    def foo(x, sep=sep, delimiter=qi.DELIMITER):
+        x = tuple(x.split(sep))
+        x = dict(
+            matrix_hash=x[0], decomposition=x[1].split(delimiter), bomb=x[2]
+        )
+        print(x)
+        if x["bomb"] in x["decomposition"] and len(x["decomposition"]) == 1:
+            x = "H" + sep + x["matrix_hash"]
+        elif x["bomb"] in x["decomposition"] and len(x["decomposition"]) > 1:
+            x = "P" + sep + x["matrix_hash"]
+        elif x["bomb"] not in x["decomposition"]:
+            x = "I" + sep + x["matrix_hash"]
+        else:
+            print("ERROR")
+        print(x)
+        print()
+        return x
+
+    matrices[combis] = matrices[combis].map(foo)
+    matrices["initial"] = matrices["initial"].map(lambda x: "I" + sep + x)
+    matrices["final"] = matrices["final"].map(lambda x: "F" + sep + x)
+    matrices["sets"] = matrices.apply(lambda x: set(x), axis=1)
+    for S in ["P", "H", "I"]:
+        matrices[S] = matrices["sets"].map(
+            lambda x: [k for k in x if k.split(sep)[0] == S]
+        )
+
+    matrices.drop(["sets", "H", "I"], axis=1, inplace=True)
+
+    return matrices
+
+
+matrices = matrices2hashes(
+    report.actual.rho.map(matrix2hash), combis.index.to_list()
+)
+print(matrices)
