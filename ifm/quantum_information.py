@@ -14,10 +14,11 @@ import pickle
 import qutip as qt
 
 # Numerical tolerance
-DEC = 13
+DEC = 7
 TOL = 10 ** (-DEC)
 ROUND = 4  # Number of decimal points to display when rounding
 DELIMITER = "·"
+SHA_ROUND = 6
 
 # Shorthand for representing the quantum states of the bombs as single
 # characters. The dimensions of this "bomb Hilbert space" are as follows:
@@ -28,36 +29,38 @@ DELIMITER = "·"
 # "orthogonal" possibilities.
 BOMB_DICT = {
     # Completely away from the photon's path
-    "0": (np.array([0, 0, 1]), r"$\ket{0}$"),
+    "0": (np.array([0, 0, 1], dtype=float), r"$\ket{0}$"),
     #  Completely on the photon's path
-    "1": (np.array([0, 1, 0]), r"$\ket{1}$"),
+    "1": (np.array([0, 1, 0], dtype=float), r"$\ket{1}$"),
     # "Asymptotically close" to being completely on the photon's path
     "O": (
-        np.array([0, 1 - TOL, TOL]) / np.sqrt(1 - 2 * TOL + 2 * TOL**2),
+        np.array([0, 1 - TOL, TOL], dtype=float)
+        / np.sqrt(1 - 2 * TOL + 2 * TOL**2),
         r"$\sqrt{\epsilon}\ket{0} + \sqrt{1-\epsilon}\ket{1}$",
     ),
     # "Asymptotically close" to being completely away from the photon's path
     "v": (
-        np.array([0, TOL, 1 - TOL]) / np.sqrt(1 - 2 * TOL + 2 * TOL**2),
+        np.array([0, TOL, 1 - TOL], dtype=float)
+        / np.sqrt(1 - 2 * TOL + 2 * TOL**2),
         r"$\sqrt{1-\epsilon}\ket{0} + \sqrt{\epsilon}\ket{1}$",
     ),
     # In an equal, coherent superposition of being on the photon's path and
     # away from it
     "½": (
-        np.array([0, 1, 1]) / np.sqrt(2),
+        np.array([0, 1, 1], dtype=float) / np.sqrt(2),
         r"$\frac{1}{\sqrt{2}}(\ket{0} + \ket{1})$",
     ),
     # Other superpositions of being on and away from the photon's path…
     "⅓": (
-        np.array([0, 1, np.sqrt(2)]) / np.sqrt(3),
+        np.array([0, 1, np.sqrt(2)], dtype=float) / np.sqrt(3),
         r"$\sqrt{\frac{2}{3}}\ket{0} + \frac{1}{\sqrt{3}}\ket{1}$",
     ),
     "⅔": (
-        np.array([0, np.sqrt(2), 1]) / np.sqrt(3),
+        np.array([0, np.sqrt(2), 1], dtype=float) / np.sqrt(3),
         r"$\frac{1}{\sqrt{3}}(\ket{0} + \sqrt{\frac{2}{3}}\ket{1})$",
     ),
     "h": (
-        np.array([0, 1, 1j]) / np.sqrt(2),
+        np.array([0, 1, 1j], dtype=complex) / np.sqrt(2),
         r"$\frac{1}{\sqrt{2}}(i\ket{0} + \ket{1})$",
     ),
 }
@@ -194,8 +197,10 @@ def is_density_matrix(rho, tol=TOL):
         - all its eigenvalues are positive.
     """
 
-    return abs(1 - np.trace(rho)) < tol and np.all(
-        np.linalg.eigvalsh(rho) >= -tol
+    return (
+        is_Hermitian(rho)
+        and abs(1 - np.trace(rho)) < tol
+        and np.all(np.linalg.eigvalsh(rho) >= -tol)
     )
 
 

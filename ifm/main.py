@@ -504,19 +504,27 @@ class System:
 
         # Check that the same decomposition also applies to the density
         # matrices.
-        # decompositions = self.report.actual.rho[self.combis.index]
-        # weights = self.combis["weight"] * self.combis["prior"]
-        # self.report[("Born", "rho", "reconstructed")] = decompositions @ weights
+
+        self.state_coeffs = []
 
         for outcome in self.report.index:
-            self.report[("Born", "rho", "final")].at[
-                (outcome,)
-            ] = self.report.actual.rho.loc[outcome, self.combis.index] @ (
+            state_coeffs = (
                 self.combis.weight
                 * self.combis.prior
                 * self.combis[outcome[0]]
                 / self.prob[outcome[0]]
             )
+
+            self.report[("Born", "rho", "final")].at[(outcome,)] = (
+                self.report.actual.rho.loc[outcome, self.combis.index]
+                @ state_coeffs
+            )
+
+            self.state_coeffs += [state_coeffs]
+
+        self.state_coeffs = pd.concat(self.state_coeffs, axis=1).T
+        self.state_coeffs.set_index(self.report.index, inplace=True)
+        assert (self.state_coeffs.sum(axis=1) - 1 < qi.TOL).all()
 
         self.report[("Born", "rho", "fidelity")] = self.report.apply(
             lambda x: qi.fidelity(
@@ -551,7 +559,140 @@ class System:
                     < tol
                 )
 
-        self.report.apply(lambda x: assertion(x, False, tol=1e-8), axis=1)
+        self.report.apply(lambda x: assertion(x, False, tol=qi.TOL), axis=1)
+
+        self.hashed_rhos = self.matrices2hashes(
+            self.report.actual.rho.map(self.matrix2hash),
+            self.combis.index.to_list(),
+        )
+        self.hash_dict = self.hash2matrix(
+            self.hashed_rhos,
+            self.report.actual.rho,
+            ["initial", "final"] + self.combis.index.to_list(),
+        )
+
+        # Check that all hashes are represented in the hash dictionary.
+        assert set(
+            self.hashed_rhos[
+                ["initial", "final"] + self.combis.index.to_list()
+            ]
+            .values.flatten()
+            .tolist()
+        ) == set(self.hash_dict.keys())
+
+        # Check that all head-on collisions are the same.
+        assert self.hashed_rhos["H"].apply(lambda x: len(x) == 1).all()
+        assert len(set(self.hashed_rhos["H"].apply(str))) == 1
+
+        # Check that "intact" and "initial" are identical and unique per bomb.
+        assert self.hashed_rhos["I"].apply(lambda x: len(x) == 1).all()
+        assert (
+            self.hashed_rhos[["initial", "I"]]
+            .apply(lambda x: x["initial"] == x["I"][0], axis=1)
+            .all()
+        )
+
+    @staticmethod
+    def matrix2hash(matrix, encoding="utf-8", sha_round=qi.SHA_ROUND):
+        import hashlib
+
+        matrix = qi.trim_imaginary(matrix)
+
+        matrix = str(np.round(matrix.reshape(-1, 1), sha_round))
+
+        # Convert the string to bytes
+        input_bytes = matrix.encode(encoding)
+
+        # Create a sha256 hash object
+        hash_object = hashlib.sha256(input_bytes)
+
+        # Generate the hexadecimal representation of the SHA hash
+        sha_value = hash_object.hexdigest()
+
+        return sha_value[-sha_round:]
+
+    @staticmethod
+    def matrices2hashes(matrices, combis, sep=":"):
+        matrices = matrices.copy()
+        initial = {
+            k[1]: f"i{k[0]}" for k in matrices.initial.loc[(1,)].items()
+        }
+        vertical = matrices.apply(lambda x: set(x), axis=0)
+        horizontal = matrices.apply(lambda x: set(x), axis=1)
+
+        matrices[combis] = matrices[combis].apply(
+            lambda x: x + sep + x.index, axis=1
+        )
+        matrices["bomb"] = matrices.index.map(lambda x: str(x[1]))
+        matrices[combis] = matrices.apply(
+            lambda x: pd.Series([k + sep + x["bomb"] for k in x[combis]]),
+            axis=1,
+        )
+        matrices.drop("bomb", axis=1, inplace=True)
+
+        def prefixes(x, sep=sep, delimiter=qi.DELIMITER):
+            x = tuple(x.split(sep))
+            x = dict(
+                matrix_hash=x[0],
+                decomposition=x[1].split(delimiter),
+                bomb=x[2],
+            )
+
+            # Head-on collision
+            if (
+                x["bomb"] in x["decomposition"]
+                and len(x["decomposition"]) == 1
+            ):
+                x = "H" + sep + x["matrix_hash"]
+            # Partial (IFM-like) interaction
+            elif (
+                x["bomb"] in x["decomposition"] and len(x["decomposition"]) > 1
+            ):
+                x = "P" + sep + x["matrix_hash"]
+            # Inact (no photon incidence)
+            elif x["bomb"] not in x["decomposition"]:
+                x = "I" + sep + x["matrix_hash"]
+            else:
+                raise ValueError("Invalid post-measurement bomb status.")
+
+            return x
+
+        matrices[combis] = matrices[combis].map(prefixes)
+        matrices["initial"] = matrices["initial"].map(lambda x: "I" + sep + x)
+        matrices["final"] = matrices["final"].map(lambda x: "F" + sep + x)
+        matrices["sets"] = matrices.apply(lambda x: set(x), axis=1)
+
+        # Construct the sets
+        for S in ["P", "H", "I"]:
+            matrices[S] = matrices["sets"].map(
+                lambda x: sorted([k for k in x if k.split(sep)[0] == S])
+            )
+
+        def check_one_element(x):
+            assert len(x) == 1
+            return x
+
+        [matrices["H"].apply(check_one_element) for S in ["H", "I"]]
+
+        matrices["size"] = matrices["sets"].apply(len)
+
+        # matrices.drop(["sets", "H", "I"], axis=1, inplace=True)
+
+        set_of_states = set(matrices[combis].values.flatten().tolist())
+        for k in matrices.loc[1].index:
+            set_of_states = set(
+                matrices[combis].loc[k].values.flatten().tolist()
+            )
+
+        return matrices
+
+    @staticmethod
+    def hash2matrix(df1, df2, columns):
+        # TODO: Check we're not overwriting duplicate keys in the dictionary
+        hash_dict = dict(
+            zip(df1[columns].values.flatten(), df2[columns].values.flatten())
+        )
+        return hash_dict
 
 
 # %% Run as a script, not as a module.
@@ -561,7 +702,9 @@ if __name__ == "__main__":
     ⅔0 ⅔00 ⅔000 0⅔ 00⅔ 000⅔ ⅔⅔ ⅔⅔⅔ ⅔⅔⅔⅔ ⅔⅔0 ⅔0⅔ 0⅔⅔ ⅔⅔00 ⅔0⅔0 0⅔0⅔ 0⅔⅔0 00⅔⅔
     """
     systems = dict()
-    for bomb_config in "½½½½½".split():
+    for (
+        bomb_config
+    ) in "⅓vh½0⅔O½ ⅓vh½0⅔O ⅓vh½0⅔ ⅓vh½0 ⅓vh½ ⅓vh".split():  # ⅔h⅓ ⅓vh½0⅔
         systems[bomb_config] = System(
             bomb_config, "0" + "1" * len(bomb_config)
         )
@@ -570,79 +713,16 @@ if __name__ == "__main__":
         combis = systems[bomb_config].combis
         prob = systems[bomb_config].prob
         print(f"{bomb_config}:")
-        print(prob)
+        # print(prob)
         systems[bomb_config].decompose_born()
-        report = systems[bomb_config].report
         # systems[bomb_config].plot_report(100, optimize_pdf=False)
 
-# %%
+        report = systems[bomb_config].report
+        hash_dict = systems[bomb_config].hash_dict
+        hashed_rhos = systems[bomb_config].hashed_rhos
+        state_coeffs = systems[bomb_config].state_coeffs
 
-
-def matrix2hash(matrix, encoding="utf-8", sha_round=4):
-    import hashlib
-
-    matrix = str(np.round(matrix.reshape(-1, 1), sha_round))
-
-    # Convert the string to bytes
-    input_bytes = matrix.encode(encoding)
-
-    # Create a sha256 hash object
-    hash_object = hashlib.sha256(input_bytes)
-
-    # Generate the hexadecimal representation of the SHA hash
-    sha_value = hash_object.hexdigest()
-
-    return sha_value[-sha_round:]
-
-
-def matrices2hashes(matrices, combis, sep=":"):
-    matrices = matrices.copy()
-    initial = {k[1]: f"i{k[0]}" for k in matrices.initial.loc[(1,)].items()}
-    vertical = matrices.apply(lambda x: set(x), axis=0)
-    horizontal = matrices.apply(lambda x: set(x), axis=1)
-
-    matrices[combis] = matrices[combis].apply(
-        lambda x: x + sep + x.index, axis=1
-    )
-    matrices["bomb"] = matrices.index.map(lambda x: str(x[1]))
-    matrices[combis] = matrices.apply(
-        lambda x: pd.Series([k + sep + x["bomb"] for k in x[combis]]), axis=1
-    )
-    matrices.drop("bomb", axis=1, inplace=True)
-
-    def foo(x, sep=sep, delimiter=qi.DELIMITER):
-        x = tuple(x.split(sep))
-        x = dict(
-            matrix_hash=x[0], decomposition=x[1].split(delimiter), bomb=x[2]
-        )
-        print(x)
-        if x["bomb"] in x["decomposition"] and len(x["decomposition"]) == 1:
-            x = "H" + sep + x["matrix_hash"]
-        elif x["bomb"] in x["decomposition"] and len(x["decomposition"]) > 1:
-            x = "P" + sep + x["matrix_hash"]
-        elif x["bomb"] not in x["decomposition"]:
-            x = "I" + sep + x["matrix_hash"]
-        else:
-            print("ERROR")
-        print(x)
-        print()
-        return x
-
-    matrices[combis] = matrices[combis].map(foo)
-    matrices["initial"] = matrices["initial"].map(lambda x: "I" + sep + x)
-    matrices["final"] = matrices["final"].map(lambda x: "F" + sep + x)
-    matrices["sets"] = matrices.apply(lambda x: set(x), axis=1)
-    for S in ["P", "H", "I"]:
-        matrices[S] = matrices["sets"].map(
-            lambda x: [k for k in x if k.split(sep)[0] == S]
-        )
-
-    matrices.drop(["sets", "H", "I"], axis=1, inplace=True)
-
-    return matrices
-
-
-matrices = matrices2hashes(
-    report.actual.rho.map(matrix2hash), combis.index.to_list()
-)
-print(matrices)
+        jaja = state_coeffs.loc[
+            [(k, 1) for k in range(1, systems[bomb_config].N + 1)]
+        ]
+        print(jaja.map(abs).sum(axis=1))
