@@ -474,3 +474,24 @@ def plot_Wigner_old(system, ROUND=4):
             )
 
         plt.show()
+
+
+def cosine_similarity(x, y):
+    return (x @ y) / (np.sqrt(x @ x) * np.sqrt(y @ y))
+
+
+def distance(x, y):
+    return np.sqrt((x - y) @ (x - y))
+
+
+def fill_DataFrame_coordinates(index, columns, foo=None, delim=" "):
+    df = pd.DataFrame(index=index, columns=columns)
+    df = df.apply(lambda x: x.index)
+    df = df.map(str).T
+    df = df.apply(lambda x: x + " " + str(x.name), axis=1)
+    df = df.map(lambda x: x.split(delim)).T
+
+    if foo == None:
+        return df
+    else:
+        return df.map(foo)

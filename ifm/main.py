@@ -192,12 +192,13 @@ class System:
         self.prob = self.coeffs.apply(
             lambda y: qi.trim_imaginary(np.conj(y) @ y, qi.TOL), axis=0
         )
-        self.prob = pd.Series(
-            self.prob.values, name="probability", index=self.prob.index
+        self.prob = pd.DataFrame(
+            {"probability": self.prob.values}, index=self.prob.index
         )
+        self.prob.index.rename("outcome", inplace=True)
 
         # Normalize the whole state.
-        self.coeffs /= np.sqrt(self.prob)
+        self.coeffs /= np.sqrt(self.prob["probability"])
 
     @staticmethod
     def Born_decomposition(N, k=2, delimiter=qi.DELIMITER, sort=True):
@@ -475,7 +476,7 @@ class System:
             )
 
             # save the outcome probabilities,
-            self.combis.at[c, range(1, N + 1)] = subsystem.prob
+            self.combis.at[c, range(1, N + 1)] = subsystem.prob["probability"]
 
             # compute the density matrix of the post-photon-measurement state
             # of the bomb,
@@ -500,7 +501,7 @@ class System:
             .mul(self.combis["weight"] * self.combis["prior"], axis=0)
             .sum(axis=0)
         )
-        assert np.allclose(epsilon.values, self.prob)
+        assert np.allclose(epsilon.values, self.prob["probability"])
 
         # Check that the same decomposition also applies to the density
         # matrices.
@@ -512,7 +513,7 @@ class System:
                 self.combis.weight
                 * self.combis.prior
                 * self.combis[outcome[0]]
-                / self.prob[outcome[0]]
+                / self.prob["probability"].loc[outcome[0]]
             )
 
             self.report[("Born", "rho", "final")].at[(outcome,)] = (
@@ -524,7 +525,27 @@ class System:
 
         self.state_coeffs = pd.concat(self.state_coeffs, axis=1).T
         self.state_coeffs.set_index(self.report.index, inplace=True)
+
+        # Assert that the linear combination adds up to unity.
         assert (self.state_coeffs.sum(axis=1) - 1 < qi.TOL).all()
+
+        ####
+        linear_combinations = pd.DataFrame(
+            self.state_coeffs.loc[
+                [(k, 1) for k in range(1, self.N + 1)]
+            ].values,
+            index=range(1, self.N + 1),
+            columns=self.combis.index,
+        )
+        linear_combinations.index.rename("outcome", inplace=True)
+        linear_combinations["hash"] = linear_combinations.apply(
+            lambda x: self.matrix2hash(x.values), axis=1
+        )
+        linear_combinations["sum"] = linear_combinations[
+            self.combis.index
+        ].sum(axis=1)
+        self.prob = pd.concat([self.prob, linear_combinations], axis=1)
+        ####
 
         self.report[("Born", "rho", "fidelity")] = self.report.apply(
             lambda x: qi.fidelity(
@@ -700,29 +721,32 @@ if __name__ == "__main__":
     """
     ½0 0½ 0000½ ½½½ ½½½½ ⅓0½ ⅓O½ ⅓O½½ ⅓O½⅓ ⅓O½⅓½ ½0 O0 O00 ⅓O½½ ⅓O½ ⅓vh½0h ⅓½½ ⅔½½
     ⅔0 ⅔00 ⅔000 0⅔ 00⅔ 000⅔ ⅔⅔ ⅔⅔⅔ ⅔⅔⅔⅔ ⅔⅔0 ⅔0⅔ 0⅔⅔ ⅔⅔00 ⅔0⅔0 0⅔0⅔ 0⅔⅔0 00⅔⅔
+    ⅓vh½0⅔O½ ⅓vh½0⅔O ⅓vh½0⅔ ⅓vh½0 ⅓vh½ ⅓vh
     """
     systems = dict()
-    for (
-        bomb_config
-    ) in "⅓vh½0⅔O½ ⅓vh½0⅔O ⅓vh½0⅔ ⅓vh½0 ⅓vh½ ⅓vh".split():  # ⅔h⅓ ⅓vh½0⅔
+    for bomb_config in "h½v⅔½".split():  # ⅔h⅓ ⅓vh½0⅔
         systems[bomb_config] = System(
             bomb_config, "0" + "1" * len(bomb_config)
         )
         systems[bomb_config]()
         coeffs = systems[bomb_config].coeffs
         combis = systems[bomb_config].combis
+        systems[bomb_config].decompose_born()
         prob = systems[bomb_config].prob
         print(f"{bomb_config}:")
-        # print(prob)
-        systems[bomb_config].decompose_born()
-        # systems[bomb_config].plot_report(100, optimize_pdf=False)
-
+        print(prob[["probability", "hash"]])
         report = systems[bomb_config].report
         hash_dict = systems[bomb_config].hash_dict
         hashed_rhos = systems[bomb_config].hashed_rhos
         state_coeffs = systems[bomb_config].state_coeffs
+        # systems[bomb_config].plot_report(100, optimize_pdf=False)
 
-        jaja = state_coeffs.loc[
-            [(k, 1) for k in range(1, systems[bomb_config].N + 1)]
-        ]
-        print(jaja.map(abs).sum(axis=1))
+# %%
+# prods = qi.fill_DataFrame_coordinates(
+#     linear_combinations.index,
+#     linear_combinations.index.to_list(),
+#     lambda x: qi.cosine_similarity(
+#         linear_combinations.loc[int(x[0])][combis.index],
+#         linear_combinations.loc[int(x[1])][combis.index]))
+# print(prods)
+# print(prods.shape)
