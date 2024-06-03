@@ -741,6 +741,7 @@ if __name__ == "__main__":
         state_coeffs = systems[bomb_config].state_coeffs
         # systems[bomb_config].plot_report(100, optimize_pdf=False)
 
+
 # %%
 # prods = qi.fill_DataFrame_coordinates(
 #     linear_combinations.index,
@@ -750,3 +751,41 @@ if __name__ == "__main__":
 #         linear_combinations.loc[int(x[1])][combis.index]))
 # print(prods)
 # print(prods.shape)
+def foo(combis, N):
+    index = combis.index
+    total = 0
+
+    rho_all = np.array([1, -1j, -0.2, 1 + 2 * 1j, -0.9])
+    # rho_all = np.array([1, -1, 1, 1, 1j])
+    rho_all = rho_all / np.sqrt(rho_all @ np.conjugate(rho_all))
+    rho_all_vector = rho_all.copy()
+    rho_all = np.outer(rho_all, np.conjugate(rho_all))
+    print("rho_all:")
+    print(rho_all)
+    assert qi.is_density_matrix(rho_all)
+
+    rho = {k: None for k in index}
+    for k in rho.keys():
+        rho[k] = [0] * N
+        niha = 0
+        for i in [int(j) - 1 for j in k.split(qi.DELIMITER)]:
+            niha += rho_all_vector[i] * np.conjugate(rho_all_vector[i])
+            rho[k][i] = rho_all_vector[i]
+
+        rho[k] = rho[k] / np.sqrt(rho[k] @ np.conjugate(rho[k]))
+        niha = niha / np.sqrt(rho[k] @ np.conjugate(rho[k]))
+        rho[k] = (
+            np.outer(np.array(rho[k]), np.conjugate(np.array(rho[k])))
+            * combis.loc[k]["weight"]
+            * niha
+        )  # * combis.loc[k]['prior']
+        total += rho[k]
+    print("total:")
+    print(total)
+    assert qi.is_density_matrix(total)
+    assert np.allclose(total, rho_all)
+    return rho, rho_all, total
+
+
+rho, rho_all, total = foo(combis, systems[bomb_config].N)
+# print(rho)
