@@ -724,7 +724,7 @@ if __name__ == "__main__":
     ⅓vh½0⅔O½ ⅓vh½0⅔O ⅓vh½0⅔ ⅓vh½0 ⅓vh½ ⅓vh
     """
     systems = dict()
-    for bomb_config in "h½v⅔½".split():  # ⅔h⅓ ⅓vh½0⅔
+    for bomb_config in "½½½".split():  # ⅔h⅓ ⅓vh½0⅔
         systems[bomb_config] = System(
             bomb_config, "0" + "1" * len(bomb_config)
         )
@@ -751,41 +751,96 @@ if __name__ == "__main__":
 #         linear_combinations.loc[int(x[1])][combis.index]))
 # print(prods)
 # print(prods.shape)
-def foo(combis, N):
+def foo(rho_all, ROUND=qi.ROUND):
+    N = len(rho_all)
+    combis = System.Born_decomposition(N)
     index = combis.index
     total = 0
 
-    rho_all = np.array([1, -1j, -0.2, 1 + 2 * 1j, -0.9])
-    # rho_all = np.array([1, -1, 1, 1, 1j])
+    # Normalize
     rho_all = rho_all / np.sqrt(rho_all @ np.conjugate(rho_all))
     rho_all_vector = rho_all.copy()
+    print("*** rho_all_vector:")
+    print(np.round(rho_all_vector, ROUND), "\n")
+
+    # Density matrix from state vector
     rho_all = np.outer(rho_all, np.conjugate(rho_all))
-    print("rho_all:")
-    print(rho_all)
+    print("*** rho_all:")
+    print(np.round(rho_all, ROUND), "\n")
     assert qi.is_density_matrix(rho_all)
 
     rho = {k: None for k in index}
+    # For each decomposition
     for k in rho.keys():
         rho[k] = [0] * N
-        niha = 0
         for i in [int(j) - 1 for j in k.split(qi.DELIMITER)]:
-            niha += rho_all_vector[i] * np.conjugate(rho_all_vector[i])
             rho[k][i] = rho_all_vector[i]
+        prior = qi.trim_imaginary(
+            np.array(rho[k]) @ np.array(np.conjugate(rho[k]))
+        )
+        combis.loc[k, "prior"] = prior
 
-        rho[k] = rho[k] / np.sqrt(rho[k] @ np.conjugate(rho[k]))
-        niha = niha / np.sqrt(rho[k] @ np.conjugate(rho[k]))
-        rho[k] = (
-            np.outer(np.array(rho[k]), np.conjugate(np.array(rho[k])))
-            * combis.loc[k]["weight"]
-            * niha
-        )  # * combis.loc[k]['prior']
-        total += rho[k]
-    print("total:")
-    print(total)
+        if prior != 0:
+            # Normalize the state
+            # rho[k] = rho[k] / np.sqrt(rho[k] @ np.conjugate(rho[k]))
+            rho[k] = (
+                np.outer(np.array(rho[k]), np.conjugate(np.array(rho[k])))
+                * combis.loc[k]["weight"]
+                # * combis.loc[k]["prior"]
+            )
+            total += rho[k]
+        else:
+            rho[k] = 0
+    print("*** total:")
+    print(np.round(total, ROUND), "\n")
     assert qi.is_density_matrix(total)
     assert np.allclose(total, rho_all)
-    return rho, rho_all, total
+    return dict(rho=rho, rho_all=rho_all, total=total, combis=combis)
 
 
-rho, rho_all, total = foo(combis, systems[bomb_config].N)
-# print(rho)
+decomposition = foo(
+    np.array(
+        # [.5j, .5+1j, -1, 0, .65-3*1j, -3, 1]
+        # [1, 1 , .5, 1j]
+        # [1]*2,
+        [1]
+        * systems[bomb_config].N
+    )
+)
+
+# %%
+
+
+def foo(v):
+    c = v - v.min()
+    S = c.sum()
+    c = c / S
+    print(S, c.sum())
+    assert abs(c.sum() - 1) < qi.TOL
+    return c
+
+
+print(report.actual.rho[combis.index].iloc[2] @ foo(state_coeffs.iloc[2]))
+print(report.actual.rho["final"].iloc[2])
+
+
+# %%
+def jaja(n, coeffs=coeffs, H=np.array([[1, 1], [1, -1]]) / np.sqrt(2)):
+    assert 1 <= n <= coeffs.shape[1]
+    rho = np.outer(coeffs[n], np.conjugate(coeffs[n]))
+    kets = ["".join([str(int(j == "1")) for j in k]) for k in coeffs.index]
+    if H is not None:
+        H_new = H.copy()
+        for k in range(coeffs.shape[1] - 1):
+            H_new = np.kron(H_new, H)
+        H = H_new
+        rho = np.matmul(np.matmul(H, rho), np.conjugate(np.transpose(H)))
+    assert qi.is_density_matrix(rho)
+    rho = np.round(rho, 3)
+    rho = qi.trim_imaginary(rho)
+    rho = pd.DataFrame(rho, index=kets, columns=kets)
+    return rho
+
+
+rho = jaja(3)
+# print(rho.values)
