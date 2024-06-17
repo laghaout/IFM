@@ -724,7 +724,7 @@ if __name__ == "__main__":
     ⅓vh½0⅔O½ ⅓vh½0⅔O ⅓vh½0⅔ ⅓vh½0 ⅓vh½ ⅓vh
     """
     systems = dict()
-    for bomb_config in "½½½".split():  # ⅔h⅓ ⅓vh½0⅔
+    for bomb_config in "½½½½".split():  # ⅔h⅓ ⅓vh½0⅔
         systems[bomb_config] = System(
             bomb_config, "0" + "1" * len(bomb_config)
         )
@@ -743,15 +743,9 @@ if __name__ == "__main__":
 
 
 # %%
-# prods = qi.fill_DataFrame_coordinates(
-#     linear_combinations.index,
-#     linear_combinations.index.to_list(),
-#     lambda x: qi.cosine_similarity(
-#         linear_combinations.loc[int(x[0])][combis.index],
-#         linear_combinations.loc[int(x[1])][combis.index]))
-# print(prods)
-# print(prods.shape)
-def foo(rho_all, ROUND=qi.ROUND):
+
+
+def check_decomposition(rho_all, ROUND=qi.ROUND):
     N = len(rho_all)
     combis = System.Born_decomposition(N)
     index = combis.index
@@ -798,49 +792,82 @@ def foo(rho_all, ROUND=qi.ROUND):
     return dict(rho=rho, rho_all=rho_all, total=total, combis=combis)
 
 
-decomposition = foo(
+decomposition = check_decomposition(
     np.array(
-        # [.5j, .5+1j, -1, 0, .65-3*1j, -3, 1]
+        [0.5j, 0.5 + 1j, -1, 0, 0.65 - 3 * 1j, -3, 1]
         # [1, 1 , .5, 1j]
         # [1]*2,
-        [1]
-        * systems[bomb_config].N
+        # [1]* systems[bomb_config].N
     )
 )
 
 # %%
 
 
-def foo(v):
-    c = v - v.min()
-    S = c.sum()
-    c = c / S
-    print(S, c.sum())
-    assert abs(c.sum() - 1) < qi.TOL
-    return c
-
-
-print(report.actual.rho[combis.index].iloc[2] @ foo(state_coeffs.iloc[2]))
-print(report.actual.rho["final"].iloc[2])
-
-
 # %%
-def jaja(n, coeffs=coeffs, H=np.array([[1, 1], [1, -1]]) / np.sqrt(2)):
+print("=========")
+
+
+def apply_unitary(
+    n, coeffs=coeffs, U=np.array([[1, 1], [1, -1]]) / np.sqrt(2)
+):
+    """
+    Apply Hadamard rotations the post-photon-measurement bomb states.
+
+    Parameters
+    ----------
+    n : int
+        Positin of the photon click
+    coeffs : pandas.DataFrame, optional
+        Weights of the coherent superposition of bomb kets
+    U : numpy.array
+        Matrix representation of a unitary operation. Thi sis the Hadamard
+        rotation by default.
+
+    Returns
+    -------
+    rho : pandas.DataFrame
+        Post-photon-measurement bombs to which the Hadamard rotation was
+        applied.
+
+    """
+    # Validate the index of the photon measurement.
     assert 1 <= n <= coeffs.shape[1]
+
+    # Construct the overall bomb state.
     rho = np.outer(coeffs[n], np.conjugate(coeffs[n]))
     kets = ["".join([str(int(j == "1")) for j in k]) for k in coeffs.index]
-    if H is not None:
-        H_new = H.copy()
+
+    # If a unitary operation is specified.
+    if U is not None:
+        # Save the individual unitary operation.
+        U_init = U.copy()
+        # Apply the unitary operation to each bomb by building up the tensor
+        # product.
         for k in range(coeffs.shape[1] - 1):
-            H_new = np.kron(H_new, H)
-        H = H_new
-        rho = np.matmul(np.matmul(H, rho), np.conjugate(np.transpose(H)))
+            U = np.kron(U, U_init)
+
+        rho = np.matmul(np.matmul(U, rho), np.conjugate(np.transpose(U)))
     assert qi.is_density_matrix(rho)
-    rho = np.round(rho, 3)
-    rho = qi.trim_imaginary(rho)
+    rho = qi.trim_imaginary(np.round(rho, qi.ROUND))
     rho = pd.DataFrame(rho, index=kets, columns=kets)
     return rho
 
 
-rho = jaja(3)
-# print(rho.values)
+def projective(rho, N):
+    Pi_0 = np.array([0, 1])
+    Pi_0 = np.outer(Pi_0, Pi_0)
+    Pi = np.array([1, 0])
+    Pi = np.outer(Pi, Pi)
+    Pi_new = Pi.copy()
+    for k in range(N - 3):
+        Pi_new = np.kron(Pi_new, Pi)
+
+    Pi_new = np.kron(Pi_new, Pi_0)
+    Pi_new = np.kron(Pi_new, Pi_0)
+    Pi = Pi_new
+    return np.trace(Pi * rho)
+
+
+rho = apply_unitary(systems[bomb_config].N)
+print("Probability:", projective(rho, systems[bomb_config].N))
