@@ -724,7 +724,7 @@ if __name__ == "__main__":
     ⅓vh½0⅔O½ ⅓vh½0⅔O ⅓vh½0⅔ ⅓vh½0 ⅓vh½ ⅓vh
     """
     systems = dict()
-    for bomb_config in "½½½½".split():  # ⅔h⅓ ⅓vh½0⅔
+    for bomb_config in "½½".split():  # ⅔h⅓ ⅓vh½0⅔
         systems[bomb_config] = System(
             bomb_config, "0" + "1" * len(bomb_config)
         )
@@ -802,9 +802,6 @@ decomposition = check_decomposition(
 )
 
 # %%
-
-
-# %%
 print("=========")
 
 
@@ -847,27 +844,90 @@ def apply_unitary(
         for k in range(coeffs.shape[1] - 1):
             U = np.kron(U, U_init)
 
-        rho = np.matmul(np.matmul(U, rho), np.conjugate(np.transpose(U)))
+        rho = U @ rho @ np.conjugate(U.T)
     assert qi.is_density_matrix(rho)
-    rho = qi.trim_imaginary(np.round(rho, qi.ROUND))
     rho = pd.DataFrame(rho, index=kets, columns=kets)
     return rho
 
 
-def projective(rho, N):
-    Pi_0 = np.array([0, 1])
-    Pi_0 = np.outer(Pi_0, Pi_0)
-    Pi = np.array([1, 0])
-    Pi = np.outer(Pi, Pi)
-    Pi_new = Pi.copy()
-    for k in range(N - 3):
-        Pi_new = np.kron(Pi_new, Pi)
+# def projective(rho, N):
+#     Pi_0 = np.array([1, 0])
+#     Pi_0 = np.outer(Pi_0, Pi_0)
+#     Pi = np.array([1, 0])
+#     Pi = np.outer(Pi, Pi)
+#     Pi_new = Pi.copy()
+#     for k in range(N - 3):
+#         Pi_new = np.kron(Pi_new, Pi)
 
-    Pi_new = np.kron(Pi_new, Pi_0)
-    Pi_new = np.kron(Pi_new, Pi_0)
-    Pi = Pi_new
-    return np.trace(Pi * rho)
+#     Pi_new = np.kron(Pi_new, Pi_0)
+#     Pi_new = np.kron(Pi_new, Pi_0)
+#     Pi = Pi_new
+#     return np.trace(Pi @ rho)
 
 
 rho = apply_unitary(systems[bomb_config].N)
-print("Probability:", projective(rho, systems[bomb_config].N))
+# print("Probability:", projective(rho, systems[bomb_config].N))
+
+# %%
+A = systems[bomb_config].b[0][1:]
+A_i = np.outer(A, A)
+A = np.kron(A_i, A_i)
+A = np.kron(A, A_i)
+print(A)
+
+U_i = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
+U = np.kron(U_i, U_i)
+U = np.kron(U, U_i)
+print(U)
+
+P = np.array([1, 0])
+P_i = np.outer(P, P)
+P = np.kron(P_i, P_i)
+P = np.kron(P, P_i)
+print(P)
+
+print("---")
+print(np.round(U_i @ A_i @ np.conjugate(U_i.T), qi.ROUND))
+print(np.round(np.trace(P_i @ U_i @ A_i @ np.conjugate(U_i.T)), qi.ROUND))
+print("---")
+print(np.round(np.trace(P @ U @ A @ np.conjugate(U.T)), qi.ROUND))
+
+
+# %%
+def vec2mat(M):
+    if len(M.shape) == 1:
+        return np.outer(M, np.conjugate(M))
+    else:
+        assert M.shape[0] == M.shape[1]
+        return M
+
+
+def compose(M):
+    assert isinstance(M, tuple)
+    M = tuple(vec2mat(k) for k in M)
+
+    if len(M) == 1:
+        return M[0]
+    else:
+        M_final = M[0]
+        for m in M[1:]:
+            M_final = np.kron(M_final, m)
+        return M_final
+
+
+U = compose(
+    (np.array([[1, 1], [1, -1]]) / np.sqrt(2),) * systems[bomb_config].N
+)
+# P = compose((np.array([1, 0]),)*systems[bomb_config].N)
+P = compose(
+    (
+        np.array([1, 0]),
+        np.array([1, 0]),
+    )
+)
+assert (
+    qi.is_unitary(U)
+    and qi.is_density_matrix(rho.values)
+    and qi.is_density_matrix(P)
+)
+print("p =", qi.Born(P, U @ rho.values @ np.conjugate(U.T)))
