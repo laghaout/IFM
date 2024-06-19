@@ -724,7 +724,7 @@ if __name__ == "__main__":
     ⅓vh½0⅔O½ ⅓vh½0⅔O ⅓vh½0⅔ ⅓vh½0 ⅓vh½ ⅓vh
     """
     systems = dict()
-    for bomb_config in "½½".split():  # ⅔h⅓ ⅓vh½0⅔
+    for bomb_config in "½½½½½".split():  # ⅔h⅓ ⅓vh½0⅔
         systems[bomb_config] = System(
             bomb_config, "0" + "1" * len(bomb_config)
         )
@@ -893,7 +893,7 @@ print("---")
 print(np.round(np.trace(P @ U @ A @ np.conjugate(U.T)), qi.ROUND))
 
 
-# %%
+# %% NOTE: This only works for ½½½...
 def vec2mat(M):
     if len(M.shape) == 1:
         return np.outer(M, np.conjugate(M))
@@ -920,14 +920,24 @@ U = compose(
 )
 # P = compose((np.array([1, 0]),)*systems[bomb_config].N)
 P = compose(
-    (
-        np.array([1, 0]),
-        np.array([1, 0]),
-    )
+    tuple(np.array([int(k == '0'), int(k == '1')]) 
+          for k in list('11111'))
 )
 assert (
     qi.is_unitary(U)
     and qi.is_density_matrix(rho.values)
     and qi.is_density_matrix(P)
 )
-print("p =", qi.Born(P, U @ rho.values @ np.conjugate(U.T)))
+
+print("Without clicks")
+p = qi.Born(P, U @ compose(tuple(j[1:] for j in systems[bomb_config].b)) @ np.conjugate(U.T))
+print(f"p =", np.round(p, qi.ROUND))
+    
+print("With clicks:")
+for n in range(1, systems[bomb_config].N+1):
+    p = qi.Born(P, U @ vec2mat(coeffs[n]) @ np.conjugate(U.T) )
+    print(f"p({n}) =", np.round(p, qi.ROUND))
+
+#%%
+
+
