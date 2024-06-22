@@ -724,7 +724,7 @@ if __name__ == "__main__":
     ⅓vh½0⅔O½ ⅓vh½0⅔O ⅓vh½0⅔ ⅓vh½0 ⅓vh½ ⅓vh
     """
     systems = dict()
-    for bomb_config in "½½½½½".split():  # ⅔h⅓ ⅓vh½0⅔
+    for bomb_config in "½½½½".split():  # ⅔h⅓ ⅓vh½0⅔
         systems[bomb_config] = System(
             bomb_config, "0" + "1" * len(bomb_config)
         )
@@ -802,142 +802,62 @@ decomposition = check_decomposition(
 )
 
 # %%
-print("=========")
 
 
-def apply_unitary(
-    n, coeffs=coeffs, U=np.array([[1, 1], [1, -1]]) / np.sqrt(2)
+def check_disturbance(
+    P=None,
+    coeffs=systems[bomb_config].coeffs,
+    bomb_vectors=systems[bomb_config].b,
+    U=np.array([[1, 1], [1, -1]]) / np.sqrt(2),
 ):
     """
-    Apply Hadamard rotations the post-photon-measurement bomb states.
+    NOTE: This only works if all bombs are initially ½.
 
     Parameters
     ----------
-    n : int
-        Positin of the photon click
-    coeffs : pandas.DataFrame, optional
-        Weights of the coherent superposition of bomb kets
-    U : numpy.array
-        Matrix representation of a unitary operation. Thi sis the Hadamard
-        rotation by default.
+    P : TYPE, optional
+        DESCRIPTION. The default is None.
+    coeffs : TYPE, optional
+        DESCRIPTION. The default is systems[bomb_config].coeffs.
+    bomb_vectors : TYPE, optional
+        DESCRIPTION. The default is systems[bomb_config].b.
+    N : TYPE, optional
+        DESCRIPTION. The default is systems[bomb_config].N.
+    U : np.array
+        Unitary transformation. The default is a Hadamard rotation.
 
     Returns
     -------
-    rho : pandas.DataFrame
-        Post-photon-measurement bombs to which the Hadamard rotation was
-        applied.
+    None.
 
     """
-    # Validate the index of the photon measurement.
-    assert 1 <= n <= coeffs.shape[1]
 
-    # Construct the overall bomb state.
-    rho = np.outer(coeffs[n], np.conjugate(coeffs[n]))
-    kets = ["".join([str(int(j == "1")) for j in k]) for k in coeffs.index]
+    N = len(bomb_vectors)
 
-    # If a unitary operation is specified.
-    if U is not None:
-        # Save the individual unitary operation.
-        U_init = U.copy()
-        # Apply the unitary operation to each bomb by building up the tensor
-        # product.
-        for k in range(coeffs.shape[1] - 1):
-            U = np.kron(U, U_init)
+    U = qi.compose((U,) * N)
 
-        rho = U @ rho @ np.conjugate(U.T)
-    assert qi.is_density_matrix(rho)
-    rho = pd.DataFrame(rho, index=kets, columns=kets)
-    return rho
-
-
-# def projective(rho, N):
-#     Pi_0 = np.array([1, 0])
-#     Pi_0 = np.outer(Pi_0, Pi_0)
-#     Pi = np.array([1, 0])
-#     Pi = np.outer(Pi, Pi)
-#     Pi_new = Pi.copy()
-#     for k in range(N - 3):
-#         Pi_new = np.kron(Pi_new, Pi)
-
-#     Pi_new = np.kron(Pi_new, Pi_0)
-#     Pi_new = np.kron(Pi_new, Pi_0)
-#     Pi = Pi_new
-#     return np.trace(Pi @ rho)
-
-
-rho = apply_unitary(systems[bomb_config].N)
-# print("Probability:", projective(rho, systems[bomb_config].N))
-
-# %%
-A = systems[bomb_config].b[0][1:]
-A_i = np.outer(A, A)
-A = np.kron(A_i, A_i)
-A = np.kron(A, A_i)
-print(A)
-
-U_i = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
-U = np.kron(U_i, U_i)
-U = np.kron(U, U_i)
-print(U)
-
-P = np.array([1, 0])
-P_i = np.outer(P, P)
-P = np.kron(P_i, P_i)
-P = np.kron(P, P_i)
-print(P)
-
-print("---")
-print(np.round(U_i @ A_i @ np.conjugate(U_i.T), qi.ROUND))
-print(np.round(np.trace(P_i @ U_i @ A_i @ np.conjugate(U_i.T)), qi.ROUND))
-print("---")
-print(np.round(np.trace(P @ U @ A @ np.conjugate(U.T)), qi.ROUND))
-
-
-# %% NOTE: This only works for ½½½...
-def vec2mat(M):
-    if len(M.shape) == 1:
-        return np.outer(M, np.conjugate(M))
+    if P is not None:
+        P = qi.compose(
+            tuple(np.array([int(k == "0"), int(k == "1")]) for k in list(P))
+        )
     else:
-        assert M.shape[0] == M.shape[1]
-        return M
+        P = qi.compose((np.array([1, 0]),) * N)
+
+    rho = {f"inter_{n}": qi.vec2mat(coeffs[n]) for n in range(1, N + 1)}
+    rho["intact"] = qi.compose(tuple(j[1:] for j in bomb_vectors))
+
+    assert qi.is_unitary(U) and qi.is_density_matrix(P)
+    for k, r in rho.items():
+        assert qi.is_density_matrix(r)
+
+    print("Without interaction and without photon-click collapse")
+    p = qi.Born(P, U @ rho["intact"] @ np.conjugate(U.T))
+    print(f"p =", np.round(p, qi.ROUND))
+
+    print("With clicks:")
+    for n in range(1, N + 1):
+        p = qi.Born(P, U @ rho[f"inter_{n}"] @ np.conjugate(U.T))
+        print(f"p({n}) =", np.round(p, qi.ROUND))
 
 
-def compose(M):
-    assert isinstance(M, tuple)
-    M = tuple(vec2mat(k) for k in M)
-
-    if len(M) == 1:
-        return M[0]
-    else:
-        M_final = M[0]
-        for m in M[1:]:
-            M_final = np.kron(M_final, m)
-        return M_final
-
-
-U = compose(
-    (np.array([[1, 1], [1, -1]]) / np.sqrt(2),) * systems[bomb_config].N
-)
-# P = compose((np.array([1, 0]),)*systems[bomb_config].N)
-P = compose(
-    tuple(np.array([int(k == '0'), int(k == '1')]) 
-          for k in list('11111'))
-)
-assert (
-    qi.is_unitary(U)
-    and qi.is_density_matrix(rho.values)
-    and qi.is_density_matrix(P)
-)
-
-print("Without clicks")
-p = qi.Born(P, U @ compose(tuple(j[1:] for j in systems[bomb_config].b)) @ np.conjugate(U.T))
-print(f"p =", np.round(p, qi.ROUND))
-    
-print("With clicks:")
-for n in range(1, systems[bomb_config].N+1):
-    p = qi.Born(P, U @ vec2mat(coeffs[n]) @ np.conjugate(U.T) )
-    print(f"p({n}) =", np.round(p, qi.ROUND))
-
-#%%
-
-
+check_disturbance()

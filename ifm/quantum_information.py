@@ -68,6 +68,56 @@ BOMB_DICT = {
 BOMB_DICT = pd.DataFrame(BOMB_DICT, index=["state", "LaTeX"]).T
 
 
+def tripartite():
+    """Closed form coefficients for the ½½½ bomb state."""
+
+    a = {"+": -1 / 2 + 1j * np.sqrt(3) / 2, "-": -1 / 2 - 1j * np.sqrt(3) / 2}
+
+    coeffs = pd.DataFrame(
+        {
+            1: np.array([3, 2, 2, 1, 2, 1, 1, 0]) / (6 * np.sqrt(2)),
+            2: np.array([0, -a["-"], -a["+"], 1, -1, a["+"], a["-"], 0])
+            / (6 * np.sqrt(2)),
+            3: np.array([0, -a["+"], -a["-"], 1, -1, a["-"], a["+"], 0])
+            / (6 * np.sqrt(2)),
+        },
+        index=["000", "001", "010", "011", "100", "101", "110", "111"],
+        dtype=complex,
+    )
+
+    coeffs = coeffs.iloc[::-1].set_index(coeffs.index[::-1])
+
+    prob = coeffs.apply(lambda y: np.conj(y) @ y, axis=0)
+    prob = pd.DataFrame({"probability": prob.values}, index=prob.index)
+    prob.index.rename("outcome", inplace=True)
+
+    # Normalize the whole state.
+    coeffs /= np.sqrt(prob["probability"])
+
+    return coeffs
+
+
+def vec2mat(M):
+    if len(M.shape) == 1:
+        return np.outer(M, np.conjugate(M))
+    else:
+        assert M.shape[0] == M.shape[1]
+        return M
+
+
+def compose(M):
+    assert isinstance(M, tuple)
+    M = tuple(vec2mat(k) for k in M)
+
+    if len(M) == 1:
+        return M[0]
+    else:
+        M_final = M[0]
+        for m in M[1:]:
+            M_final = np.kron(M_final, m)
+        return M_final
+
+
 def BS_op(BS, rho):
     """
     Operate the beam splitter `BS` on a density matrix `rho`.
