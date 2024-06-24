@@ -3,10 +3,13 @@
 Created on Sun Oct 29 14:04:59 2023
 
 @author: Amine Laghaout
+https://orcid.org/0000-0001-7891-4505
 
-Generalization of the Elitzur-Vaidman bomb tester to `N`-partite Mach-Zehnder
-interferometers where the bombs can be in a superposition of being on the path
-and away from the path.
+TODO
+- Entanglement bi-partite or N-partite (cf. Hardy)
+- Examine the plots
+- Double-check all the math
+- Dockerize, clean, etc.
 """
 
 import matplotlib.pyplot as plt
@@ -715,6 +718,71 @@ class System:
         )
         return hash_dict
 
+    def check_disturbance(
+        self,
+        P=None,
+        U=None,
+        coeffs=None,
+        bomb_vectors=None,
+        unitaries=dict(
+            H=np.array([[1, 1], [1, -1]]) / np.sqrt(2), I=np.eye(2)
+        ),
+    ):
+        if coeffs is None:
+            coeffs = self.coeffs
+        if bomb_vectors is None:
+            bomb_vectors = self.b
+
+        N = len(bomb_vectors)
+        print(f"{U = }, {P = }")
+
+        # Apply the unitary to all N bombs.
+        if U is None:
+            U = "H" * N
+        U = qi.compose(tuple(unitaries[k] for k in list(U)))
+
+        # Projective measurements on the bomb states after they've undergone
+        # the unitary transformation. By default (P is None), the projective
+        # measurement assumes a click on the first mode (which corresponds to a
+        # Hadamard rotation of ½).
+        if P is None:
+            P = "0" * N
+        # Otherwise, if P is provided as a string of 0s and 1s, the 0s
+        # correspond  to a click on the first mode and the 1s to a click on the
+        # second mode.  Normally, a Hadamard rotation of ½ state can only
+        # possibly lead to a  measurement on the first mode. A click on the
+        # second mode necessarily  means that the initial ½ state was disturbed
+        # (presumably via the back-action of an interaction-free measurement).
+        P = qi.compose(
+            tuple(np.array([int(k == "0"), int(k == "1")]) for k in list(P))
+        )
+
+        # Construct the density matrices of the post-photon-measurement bombs.
+        rho = {f"inter_{n}": qi.vec2mat(coeffs[n]) for n in range(1, N + 1)}
+
+        # Include the density matrices of the intact bombs (i.e., prior to any
+        # interaction with the photon. Start from the index 1 to avoid the
+        # irrelevant first dimension of the Hilbert space corresponding to an
+        # explosion. Note that the state vector is flipped so as to go from the
+        # Hilbert space defined in the notes to the more traditional Fock
+        # Hilbert space.
+        rho["intact"] = qi.compose(tuple(j[1:][::-1] for j in bomb_vectors))
+
+        # Validate the unitary, the projective measurement, and the states of
+        # the bombs.
+        assert qi.is_unitary(U) and qi.is_density_matrix(P)
+        for k, r in rho.items():
+            assert qi.is_density_matrix(r)
+
+        print("Without photon interaction and back-action:")
+        p = qi.Born(P, U @ rho["intact"] @ np.conjugate(U.T))
+        print(f"p =", np.round(p, qi.ROUND))
+
+        print("With photon interaction and back-action:")
+        for n in range(1, N + 1):
+            p = qi.Born(P, U @ rho[f"inter_{n}"] @ np.conjugate(U.T))
+            print(f"p({n}) =", np.round(p, qi.ROUND))
+
 
 # %% Run as a script, not as a module.
 if __name__ == "__main__":
@@ -724,7 +792,7 @@ if __name__ == "__main__":
     ⅓vh½0⅔O½ ⅓vh½0⅔O ⅓vh½0⅔ ⅓vh½0 ⅓vh½ ⅓vh
     """
     systems = dict()
-    for bomb_config in "½½½½".split():  # ⅔h⅓ ⅓vh½0⅔
+    for bomb_config in "½000 ½½00 ½½½0 ½½½½".split():  # ⅔h⅓ ⅓vh½0⅔
         systems[bomb_config] = System(
             bomb_config, "0" + "1" * len(bomb_config)
         )
@@ -740,6 +808,17 @@ if __name__ == "__main__":
         hashed_rhos = systems[bomb_config].hashed_rhos
         state_coeffs = systems[bomb_config].state_coeffs
         # systems[bomb_config].plot_report(100, optimize_pdf=False)
+        systems[bomb_config].check_disturbance(
+            P="0" * systems[bomb_config].N,
+            U="".join(["H" if k == "½" else "I" for k in list(bomb_config)]),
+        )
+
+        """
+        U b -> P
+        Undisturbed/inconclusive:
+        H ½ -> 0
+        I 0 -> 0
+        """
 
 
 # %%
@@ -792,72 +871,13 @@ def check_decomposition(rho_all, ROUND=qi.ROUND):
     return dict(rho=rho, rho_all=rho_all, total=total, combis=combis)
 
 
-decomposition = check_decomposition(
-    np.array(
-        [0.5j, 0.5 + 1j, -1, 0, 0.65 - 3 * 1j, -3, 1]
-        # [1, 1 , .5, 1j]
-        # [1]*2,
-        # [1]* systems[bomb_config].N
-    )
-)
+# decomposition = check_decomposition(
+#     np.array(
+#         [0.5j, 0.5 + 1j, -1, 0, 0.65 - 3 * 1j, -3, 1]
+#         # [1, 1 , .5, 1j]
+#         # [1]*2,
+#         # [1]* systems[bomb_config].N
+#     )
+# )
 
 # %%
-
-
-def check_disturbance(
-    P=None,
-    coeffs=systems[bomb_config].coeffs,
-    bomb_vectors=systems[bomb_config].b,
-    U=np.array([[1, 1], [1, -1]]) / np.sqrt(2),
-):
-    """
-    NOTE: This only works if all bombs are initially ½.
-
-    Parameters
-    ----------
-    P : TYPE, optional
-        DESCRIPTION. The default is None.
-    coeffs : TYPE, optional
-        DESCRIPTION. The default is systems[bomb_config].coeffs.
-    bomb_vectors : TYPE, optional
-        DESCRIPTION. The default is systems[bomb_config].b.
-    N : TYPE, optional
-        DESCRIPTION. The default is systems[bomb_config].N.
-    U : np.array
-        Unitary transformation. The default is a Hadamard rotation.
-
-    Returns
-    -------
-    None.
-
-    """
-
-    N = len(bomb_vectors)
-
-    U = qi.compose((U,) * N)
-
-    if P is not None:
-        P = qi.compose(
-            tuple(np.array([int(k == "0"), int(k == "1")]) for k in list(P))
-        )
-    else:
-        P = qi.compose((np.array([1, 0]),) * N)
-
-    rho = {f"inter_{n}": qi.vec2mat(coeffs[n]) for n in range(1, N + 1)}
-    rho["intact"] = qi.compose(tuple(j[1:] for j in bomb_vectors))
-
-    assert qi.is_unitary(U) and qi.is_density_matrix(P)
-    for k, r in rho.items():
-        assert qi.is_density_matrix(r)
-
-    print("Without interaction and without photon-click collapse")
-    p = qi.Born(P, U @ rho["intact"] @ np.conjugate(U.T))
-    print(f"p =", np.round(p, qi.ROUND))
-
-    print("With clicks:")
-    for n in range(1, N + 1):
-        p = qi.Born(P, U @ rho[f"inter_{n}"] @ np.conjugate(U.T))
-        print(f"p({n}) =", np.round(p, qi.ROUND))
-
-
-check_disturbance()

@@ -85,6 +85,7 @@ def tripartite():
         dtype=complex,
     )
 
+    # Flip the rows (and corresponding indices)
     coeffs = coeffs.iloc[::-1].set_index(coeffs.index[::-1])
 
     prob = coeffs.apply(lambda y: np.conj(y) @ y, axis=0)
