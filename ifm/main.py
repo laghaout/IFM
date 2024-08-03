@@ -721,12 +721,8 @@ class System:
     def check_disturbance(
         self,
         P=None,
-        U=None,
         coeffs=None,
         bomb_vectors=None,
-        unitaries=dict(
-            H=np.array([[1, 1], [1, -1]]) / np.sqrt(2), I=np.eye(2)
-        ),
     ):
         if coeffs is None:
             coeffs = self.coeffs
@@ -734,19 +730,20 @@ class System:
             bomb_vectors = self.b
 
         N = len(bomb_vectors)
-        print(f"{U = }, {P = }")
 
         # Apply the unitary to all N bombs.
-        if U is None:
-            U = "H" * N
-        U = qi.compose(tuple(unitaries[k] for k in list(U)))
 
         # Projective measurements on the bomb states after they've undergone
         # the unitary transformation. By default (P is None), the projective
-        # measurement assumes a click on the first mode (which corresponds to a
-        # Hadamard rotation of ½).
+        # measurement assumes a click on the first mode.
         if P is None:
             P = "0" * N
+            
+        U = qi.compose(tuple(np.array(
+            [[np.conjugate(b[1:][::-1][0]), np.conjugate(b[1:][::-1][1])], 
+             [-b[1:][::-1][1], b[1:][::-1][0]]], 
+            dtype=complex) for b in bomb_vectors))
+
         # Otherwise, if P is provided as a string of 0s and 1s, the 0s
         # correspond  to a click on the first mode and the 1s to a click on the
         # second mode.  Normally, a Hadamard rotation of ½ state can only
@@ -758,7 +755,10 @@ class System:
         )
 
         # Construct the density matrices of the post-photon-measurement bombs.
-        rho = {f"inter_{n}": qi.vec2mat(coeffs[n]) for n in range(1, N + 1)}
+        # Note that the state vector is flipped so as to go from the
+        # Hilbert space defined in the notes to the more traditional Fock
+        # Hilbert space.
+        rho = {f"inter_{n}": qi.vec2mat(coeffs[n][::-1]) for n in range(1, N + 1)}
 
         # Include the density matrices of the intact bombs (i.e., prior to any
         # interaction with the photon. Start from the index 1 to avoid the
@@ -777,11 +777,13 @@ class System:
         print("Without photon interaction and back-action:")
         p = qi.Born(P, U @ rho["intact"] @ np.conjugate(U.T))
         print(f"p =", np.round(p, qi.ROUND))
-
+        
         print("With photon interaction and back-action:")
         for n in range(1, N + 1):
             p = qi.Born(P, U @ rho[f"inter_{n}"] @ np.conjugate(U.T))
             print(f"p({n}) =", np.round(p, qi.ROUND))
+
+        return coeffs[n][::-1]
 
 
 # %% Run as a script, not as a module.
@@ -792,7 +794,7 @@ if __name__ == "__main__":
     ⅓vh½0⅔O½ ⅓vh½0⅔O ⅓vh½0⅔ ⅓vh½0 ⅓vh½ ⅓vh
     """
     systems = dict()
-    for bomb_config in "½000 ½½00 ½½½0 ½½½½".split():  # ⅔h⅓ ⅓vh½0⅔
+    for bomb_config in "⅔h½".split():  # ⅔h⅓ ⅓vh½0⅔
         systems[bomb_config] = System(
             bomb_config, "0" + "1" * len(bomb_config)
         )
@@ -808,76 +810,138 @@ if __name__ == "__main__":
         hashed_rhos = systems[bomb_config].hashed_rhos
         state_coeffs = systems[bomb_config].state_coeffs
         # systems[bomb_config].plot_report(100, optimize_pdf=False)
-        systems[bomb_config].check_disturbance(
-            P="0" * systems[bomb_config].N,
-            U="".join(["H" if k == "½" else "I" for k in list(bomb_config)]),
+        new_coeffs = systems[bomb_config].check_disturbance(
+            # P="1110",
         )
 
         """
         U b -> P
-        Undisturbed/inconclusive:
+        Disturbed
+        H ½ -> 1
+        Inconclusive:
         H ½ -> 0
         I 0 -> 0
         """
 
+    coeffs_tripartite = qi.tripartite()
+
+    A = report.actual.rho.initial[(1,)]
+    A = pd.DataFrame({
+        k: [v]*(systems[bomb_config].N-1)*systems[bomb_config].N 
+        for k, v in enumerate(A)})
+
+#%%
+def combi_pairs():
+    # Initial intact
+    I = report.loc[(1, 1), ('actual', 'rho', 'initial')]
+    # Back-acted on, collapses to a photon
+    D = np.array([[0,0],[0,1]])   
+    D = np.array([[1,1j],[-1j,1]])/2
+    # Back-acted on, collapses to the vacuum (because entangled?)
+    U = np.array([[1,0],[0,0]])
+    U = np.array([[1,-1j],[1j,1]])/2
+    # Final
+    F = report.loc[(2, 1), ('actual', 'rho', 'final')]
+    # Reconstructed final
+    R = (I*(systems[bomb_config].N-2) + D + U)/systems[bomb_config].N
+    print('>>', np.allclose(R, F, qi.TOL))
+combi_pairs()
+
+#%%
+
+# import pandas as pd
+
+# def generate_combinations(N):
+#     combinations = []
+#     for i in range(N):
+#         for j in range(N):
+#             if i != j:
+#                 combination = ['b'] * N
+#                 combination[i] = 'a0'
+#                 combination[j] = 'a1'
+#                 combinations.append(combination)
+#     return combinations
+
+
+# combinations = generate_combinations(systems[bomb_config].N)
+# df = pd.DataFrame(combinations, columns=range(systems[bomb_config].N))
+
+# df.head()
+
+# for k in range(len(df)):
+#     jaja = A.loc[k].copy()
+#     for l, v in df.loc[k].items():
+#         if v == 'a0':
+#             jaja[l] = np.array([[0,0], [0,1]])
+#         # elif v == 'a1': 
+#         #     jaja[l] = np.array([[1,0], [0,0]])
+#     A.loc[k] = jaja.copy()
+
+# B = A.sum() / len(A)
+
+
+
+# #%%
+
+
+# def check_decomposition(rho_all, ROUND=qi.ROUND):
+#     N = len(rho_all)
+#     combis = System.Born_decomposition(N)
+#     index = combis.index
+#     total = 0
+
+#     # Normalize
+#     rho_all = rho_all / np.sqrt(rho_all @ np.conjugate(rho_all))
+#     rho_all_vector = rho_all.copy()
+#     print("*** rho_all_vector:")
+#     print(np.round(rho_all_vector, ROUND), "\n")
+
+#     # Density matrix from state vector
+#     rho_all = np.outer(rho_all, np.conjugate(rho_all))
+#     print("*** rho_all:")
+#     print(np.round(rho_all, ROUND), "\n")
+#     assert qi.is_density_matrix(rho_all)
+
+#     rho = {k: None for k in index}
+#     # For each decomposition
+#     for k in rho.keys():
+#         rho[k] = [0] * N
+#         for i in [int(j) - 1 for j in k.split(qi.DELIMITER)]:
+#             rho[k][i] = rho_all_vector[i]
+#         prior = qi.trim_imaginary(
+#             np.array(rho[k]) @ np.array(np.conjugate(rho[k]))
+#         )
+#         combis.loc[k, "prior"] = prior
+
+#         if prior != 0:
+#             # Normalize the state
+#             # rho[k] = rho[k] / np.sqrt(rho[k] @ np.conjugate(rho[k]))
+#             rho[k] = (
+#                 np.outer(np.array(rho[k]), np.conjugate(np.array(rho[k])))
+#                 * combis.loc[k]["weight"]
+#                 # * combis.loc[k]["prior"]
+#             )
+#             total += rho[k]
+#         else:
+#             rho[k] = 0
+#     print("*** total:")
+#     print(np.round(total, ROUND), "\n")
+#     assert qi.is_density_matrix(total)
+#     assert np.allclose(total, rho_all)
+#     return dict(rho=rho, rho_all=rho_all, total=total, combis=combis)
+
+
+# # decomposition = check_decomposition(
+# #     np.array(
+# #         [0.5j, 0.5 + 1j, -1, 0, 0.65 - 3 * 1j, -3, 1]
+# #         # [1, 1 , .5, 1j]
+# #         # [1]*2,
+# #         # [1]* systems[bomb_config].N
+# #     )
+# # )
 
 # %%
 
-
-def check_decomposition(rho_all, ROUND=qi.ROUND):
-    N = len(rho_all)
-    combis = System.Born_decomposition(N)
-    index = combis.index
-    total = 0
-
-    # Normalize
-    rho_all = rho_all / np.sqrt(rho_all @ np.conjugate(rho_all))
-    rho_all_vector = rho_all.copy()
-    print("*** rho_all_vector:")
-    print(np.round(rho_all_vector, ROUND), "\n")
-
-    # Density matrix from state vector
-    rho_all = np.outer(rho_all, np.conjugate(rho_all))
-    print("*** rho_all:")
-    print(np.round(rho_all, ROUND), "\n")
-    assert qi.is_density_matrix(rho_all)
-
-    rho = {k: None for k in index}
-    # For each decomposition
-    for k in rho.keys():
-        rho[k] = [0] * N
-        for i in [int(j) - 1 for j in k.split(qi.DELIMITER)]:
-            rho[k][i] = rho_all_vector[i]
-        prior = qi.trim_imaginary(
-            np.array(rho[k]) @ np.array(np.conjugate(rho[k]))
-        )
-        combis.loc[k, "prior"] = prior
-
-        if prior != 0:
-            # Normalize the state
-            # rho[k] = rho[k] / np.sqrt(rho[k] @ np.conjugate(rho[k]))
-            rho[k] = (
-                np.outer(np.array(rho[k]), np.conjugate(np.array(rho[k])))
-                * combis.loc[k]["weight"]
-                # * combis.loc[k]["prior"]
-            )
-            total += rho[k]
-        else:
-            rho[k] = 0
-    print("*** total:")
-    print(np.round(total, ROUND), "\n")
-    assert qi.is_density_matrix(total)
-    assert np.allclose(total, rho_all)
-    return dict(rho=rho, rho_all=rho_all, total=total, combis=combis)
-
-
-# decomposition = check_decomposition(
-#     np.array(
-#         [0.5j, 0.5 + 1j, -1, 0, 0.65 - 3 * 1j, -3, 1]
-#         # [1, 1 , .5, 1j]
-#         # [1]*2,
-#         # [1]* systems[bomb_config].N
-#     )
-# )
-
-# %%
+rho_qutip = qt.Qobj(qi.vec2mat(coeffs[2][::-1]))
+negativity_value = qt.negativity(rho_qutip, subsys=[4])
+print(negativity_value)
