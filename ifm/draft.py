@@ -1,57 +1,35 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon May 20 11:41:44 2024
+Created on Thu Aug  8 12:38:02 2024
 
 @author: amine
 """
 
 import numpy as np
-import pandas as pd
-import quantum_information as qi
+from sympy import symbols, Matrix
 
-g = -1/2 + 1j*np.sqrt(3)/2
-gp = 1/2 + 1j*np.sqrt(3)/2
-gm = 1/2 - 1j*np.sqrt(3)/2
-g2 = - 1/2 - 1j*np.sqrt(3)/2
+# Create a SymPy symbol for the Greek gamma (γ)
+gamma = symbols("γ")
 
-bombs = (
-    np.array([np.sqrt(2), 1], dtype=float) / np.sqrt(3), 
-    np.array([1, 1j], dtype=complex) / np.sqrt(2), 
-    np.array([1, 1], dtype=float) / np.sqrt(2))
+# Define the dimensions of the matrix
+rows = 4  # Number of rows (n)
+cols = 4  # Number of columns (m)
 
-# bombs = (
-#     np.array([1, 1], dtype=float) / np.sqrt(2), 
-#     np.array([1, 1], dtype=float) / np.sqrt(2), 
-#     np.array([1, 1], dtype=float) / np.sqrt(2))
+# Create the SymPy matrix using list comprehensions
+sympy_matrix = Matrix(
+    [
+        [gamma ** (i * j) for j in range(1, cols + 1)]
+        for i in range(1, rows + 1)
+    ]
+)
 
-psi = np.array(
-    [[3,2,2,1,2,1,1,0], 
-     [0,gp,gm,1,-1,g,g2,0], 
-     [0,gm,gp,1,-1,g2,g,0]], 
-    dtype=complex)/3
+# Print the SymPy matrix
+print("SymPy Matrix:")
+print(sympy_matrix)
 
-psi = pd.DataFrame(psi, index=range(1,len(bombs)+1)).T
+# Convert the SymPy matrix to a NumPy array of objects
+numpy_array = np.array(sympy_matrix.tolist(), dtype=object)
 
-bombs = pd.DataFrame(bombs, index=range(1,len(bombs)+1)).T
-
-def unitary(bomb: np.array):
-    return np.array(
-        [[np.conjugate(bomb[0]), np.conjugate(bomb[1])], 
-         [-bomb[1], bomb[0]]], dtype=complex)
-
-U = unitary(bombs[1])
-for b in range(2, bombs.shape[1]+1):
-    U = np.kron(U, unitary(bombs[b]))
-
-qi.is_unitary(U)
-    
-P = U @ psi[1]
-for i, k in enumerate(P):
-    i = bin(i)[2:]
-    i = '0'*(3-len(i)) + i
-    p = np.conjugate(k)*k
-    print(f'{i}:', np.round(p, 4), '-', np.real(np.round(k, 4)), f'+ j·{np.imag(np.round(k, 4))}' if np.imag(np.round(k, 4)) > 1e-4 else '')
-    
-
-
-
+# Print the NumPy array
+print("\nNumPy Array (with symbolic expressions):")
+print(numpy_array)
