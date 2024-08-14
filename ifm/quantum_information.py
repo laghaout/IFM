@@ -61,9 +61,9 @@ def disp(x):
     )
 
 
-def vector_to_matrix(vector: np.ndarray) -> np.ndarray:
-    if len(vector.shape) == 1:
-        return np.outer(vector, np.conjugate(vector))
+def vector_to_matrix(vector: sp.Matrix) -> sp.Matrix:
+    if vector.shape[1] == 1:
+        return vector * vector.H
     else:
         return vector
 
@@ -79,8 +79,8 @@ def align_with_0(q: sp.Matrix):
     return sp.Matrix([[np.conjugate(q[0]), np.conjugate(q[1])], [-q[1], q[0]]])
 
 
-def Born(projector, state) -> float:
-    return np.trace(vector_to_matrix(projector) @ vector_to_matrix(state))
+def Born_rule(projector: sp.Matrix, state: sp.Matrix) -> float:
+    return sp.trace(vector_to_matrix(projector) * vector_to_matrix(state))
 
 
 def symmetric_BS(N):
