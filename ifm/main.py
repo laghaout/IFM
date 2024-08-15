@@ -19,13 +19,13 @@ class System(BaseModel):
     state: np.ndarray = None
     N: int = None
     report: pd.DataFrame = None
-    jaja: None = None  # TODO: remove
+    BS: None = None  # TODO: remove
 
     class Config:
         arbitrary_types_allowed = True
 
     def __call__(self):
-        # Qubits state
+        # Pure qubits state vector
         self.N = len(self.qubits)
         qubits = tuple(qi.pure_qubit(**qubit) for qubit in self.qubits)
         self.qubits = qubits[0]
@@ -34,14 +34,21 @@ class System(BaseModel):
                 self.qubits = sp.tensorproduct(self.qubits, qubits[q])
             self.qubits = sp.Matrix(self.qubits.reshape(2**self.N))
 
-        # Photon state
+        # Pure photon state vector
         N = sp.symbols("N")
         self.photon = sp.ones(self.N, 1) / sp.sqrt(N)
 
-        # Photon-qubits state
+        # Pure photon-qubits state vector
         self.state = sp.tensorproduct(self.photon, self.qubits)
         self.state = sp.Matrix(self.state.reshape(
             len(self.photon) * len(self.qubits), 1))
+
+        index = (('probability', None),) + \
+            tuple(('qubit', int(k)) for k in range(1, self.N+1))
+        self.report = pd.DataFrame(
+            columns=range(1, self.N+1),
+            index=pd.MultiIndex.from_tuples(index))
+
 
         # self.interact()
         self.beamsplit()
@@ -57,28 +64,34 @@ class System(BaseModel):
         BS = sp.tensorproduct(qi.symmetric_BS(self.N), sp.eye(2**self.N))        
         BS = BS.reshape(len(self.state), len(self.state))
         BS = sp.Matrix(BS)
+        self.BS = BS
+        
+        # If state is a pure vector,
         if self.state.shape[1] == 1:
-            self.state = BS * self.state
+            self.state = self.BS * self.state
+        # else if the state is a density matrix.
         elif self.state.shape[0] == self.state.shape[1]:
-            self.state = BS * self.state * BS.H
+            self.state = self.BS * self.state * BS.H
 
     def measure_photon(self):
         print("==== Measure the photon")
-        P = []
-        # For each possible position of a photon click...
+
+        # For each possible position of the photon click,
         for n in range(1, self.N + 1):
             projector = sp.zeros(self.N)
             projector[n - 1, n - 1] = 1
-            projector = sp.kronecker_product(projector, sp.eye(2**self.N))
-            probability = qi.Born_rule(projector, self.state)
-            P.append(probability)
+            # projector = sp.kronecker_product(projector, sp.eye(2**self.N))
+            print(projector)
+            BS = qi.symmetric_BS(self.N)
+            BS = BS.reshape(len(self.photon), len(self.photon))
+            BS = sp.Matrix(BS)            
+            probability = qi.Born_rule(
+                projector, 
+                BS * self.photon)
+            probability = qi.round(complex(probability.subs(dict(N=self.N)).evalf()))
+            self.report.loc[('probability', None)][n] = probability
 
-        self.report = pd.DataFrame({"probability": P})
-        self.report["probability_evaluated"] = self.report.probability.apply(
-            lambda x: x.subs(dict(N=self.N)).evalf()
-        )
-
-        print(self.report.probability_evaluated)
+        print(self.report)
 
     def measure_qubits(self):
         print("==== Measure the qubits")
@@ -93,7 +106,7 @@ if __name__ == "__main__":
         # qubits=tuple(dict(q0=k) for k in '½'*3),
         # qubits=(dict(q0='a', q1='b'), dict(q0='x', q1='y'),),
         # qubits=(dict(q0=f"a{k}", q1=f"b{k}") for k in range(1, 4)),
-        qubits=(dict(q0=k) for k in '½½')
+        qubits=(dict(q0=k) for k in '½ii')
     )
     system()
     report = system.report
@@ -104,3 +117,4 @@ if __name__ == "__main__":
     # except BaseException:
     #     print(report.evaluated)
 
+#%%

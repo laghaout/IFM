@@ -124,5 +124,7 @@ def round(value, decimals=DECIMALS):
     elif isinstance(value, np.ndarray):
         if (abs(value.imag) < 10 ** (-decimals)).all():
             value = value.real
+    if value < 10 ** (-decimals):
+        return 0
 
     return np.round(value, decimals)
