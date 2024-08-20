@@ -11,7 +11,8 @@ import qutip as qt
 import sympy as sp
 
 
-DECIMALS = 4
+DECIMALS = 5
+TOL = 10 ** (-DECIMALS)
 
 # Dictionary of shorthand notations for "common" qubits
 QUBITS_DICT = {
@@ -117,6 +118,37 @@ def symmetric_BS(N):
     return matrix
 
 
+def is_unitary(matrix, tol=TOL):
+    """
+    Check whether the `matrix` is unitary.
+
+    Parameters
+    ----------
+    matrix : np.ndarray
+        Some complex matrix
+    tol : float, optional
+        Numerical tolerance
+
+    Returns
+    -------
+    bool
+        True if the product of the matrix and its conjugate transpose is equal
+        to the identity matrix.
+    """
+
+    if not isinstance(matrix, np.ndarray):
+        matrix = np.array(matrix.evalf(), dtype=complex)
+
+    # Calculate the conjugate transpose (Hermitian).
+    conj_transpose = np.conjugate(matrix.T)
+
+    # Perform the multiplication of the matrix with its conjugate transpose.
+    product = np.dot(matrix, conj_transpose)
+
+    # Is the product equal to the identity within the specified tolerance?
+    return np.allclose(product, np.eye(matrix.shape[0]), atol=tol)
+
+
 def round(value, decimals=DECIMALS):
     if isinstance(value, complex):
         if abs(value.imag) < 10 ** (-decimals):
@@ -128,3 +160,59 @@ def round(value, decimals=DECIMALS):
         return 0
 
     return np.round(value, decimals)
+
+
+def purity(rho, tol=TOL):
+    """
+    Compute the purity of a quantum state `rho`.
+
+    Parameters
+    ----------
+    rho : np.ndarray
+        Quantum state
+    tol : float, optional
+        Numerical tolerance
+
+    Returns
+    -------
+    purity : float
+        Purity of the quantum state
+    """
+
+    if not isinstance(rho, np.ndarray):
+        rho = np.array(rho.evalf(), dtype=complex)
+
+    purity = np.trace(rho @ rho)
+    assert -tol < trim_imaginary(purity) < 1 + tol, f"purity is {purity}"
+
+    if purity.imag < tol:
+        purity = purity.real
+
+
+def trim_imaginary(matrix, tol=TOL):
+    """
+    For better readability, trim the imaginary parts when they are negligible
+    within numerical tolerance.
+
+    Parameters
+    ----------
+    matrix :  np.ndarray
+        Complex matrix
+    tol : float, optional
+        Numerical tolerance
+
+    Returns
+    -------
+    matrix : np.ndarray
+        The same matrix with its imaginary part removed if negligible
+
+    """
+
+    if isinstance(matrix, complex) and matrix.imag < tol:
+        matrix = matrix.real
+    elif (matrix.imag < tol).all():
+        matrix = matrix.real
+
+    return matrix
+
+    return purity
