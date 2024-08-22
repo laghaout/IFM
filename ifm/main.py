@@ -42,6 +42,7 @@ class System(BaseModel):
 
         # Pure photon-qubits state vector
         self.state = TensorProduct(self.photon, self.qubits)
+        self.x.state = self.state
 
         # Generate the report such that the photon-click outcomes are the
         # columns. The rows consist of the
@@ -98,7 +99,11 @@ class System(BaseModel):
         try:
             report[("probability", None)] = report[
                 ("probability", None)
-            ].apply(lambda x: float(x.subs(dict(N=self.N)).evalf()))
+            ].apply(
+                lambda x: qi.round(
+                    np.complex64(x.subs(dict(N=self.N)).evalf())
+                )
+            )
         except BaseException:
             pass
         print(report.T)
@@ -113,22 +118,50 @@ class System(BaseModel):
 
 if __name__ == "__main__":
     system = System(
-        # qubits=tuple(dict(q0=k) for k in '½'*3),
+        # qubits=tuple(dict(q0=k) for k in '½'*2),
         # qubits=(dict(q0='a', q1='b'), dict(q0='x', q1='y'),),
-        qubits=(dict(q0=f"a{k}", q1=f"b{k}") for k in range(1, 3)),
-        # qubits=(dict(q0=k) for k in '½½')
+        # qubits=(dict(q0=f"a{k}", q1=f"b{k}") for k in range(1, 3)),
+        qubits=(dict(q0=k) for k in "½½i")
     )
     system()
     system.disp_report()
-    # %%
-
-    # try:
-    #     print(report.evaluated.apply(round))
-    # except BaseException:
-    #     print(report.evaluated)
 
 # %%
-A = tuple(bin(j)[2:] for j in range(8))
-A = tuple("0" * (len(A[-1]) - len(j)) + j for j in A)
-A = np.array(A)
-print(A)
+from sympy.physics.quantum import Ket
+
+
+def foo(N, state):
+    # qubits = tuple(bin(j)[2:] for j in range(2**N))
+    # qubits = tuple("0" * (len(qubits[-1]) - len(j)) + j for j in qubits)
+    # photon = tuple((j, qubit)  for j in range(1, N+1) for qubit in qubits)
+    # print(photon)
+    photon = list(range(0, N + 1))
+    qubit = [0, 1]
+    product = [photon] + [qubit] * N
+    names = ["photon"] + [f"qubit_{k}" for k in range(1, N + 1)]
+    print(product)
+    print(names)
+    index = pd.MultiIndex.from_product(product, names=names)
+    b = {n: sp.symbols(f"{n}") for n in range(0, N + 1)}
+    basis = pd.DataFrame(
+        dict(
+            coeff=[0] * 2**N + list(state),
+            # eigenvector=[Ket(b[1])]*len(system.state),
+            eigenvector=index,
+        ),
+        index=index,
+    )
+    basis["eigenvector"] = basis.apply(
+        lambda x: Ket(*[b[j] for j in x.name]), axis=1
+    )
+    basis["explosion"] = basis.apply(lambda x: x.name[x.name[0]] != 0, axis=1)
+    # explosion = basis.coeff[basis['explosion'] == True].sum()
+    # basis.loc[(0,)+(0,)*N] = None
+    # basis.loc[(0,)+(0,)*N, 'coeff'] = explosion
+    # basis.coeff = basis.apply(lambda x: 0 if x['explosion'] == True else x['coeff'], axis=1)
+    # basis['prob'] = None
+    return basis
+
+
+basis = foo(system.N, system.state)
+A = basis[basis.explosion == True]

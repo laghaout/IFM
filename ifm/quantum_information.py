@@ -150,7 +150,7 @@ def is_unitary(matrix, tol=TOL):
 
 
 def round(value, decimals=DECIMALS):
-    if isinstance(value, complex):
+    if isinstance(value, np.complex64) or isinstance(value, complex):
         if abs(value.imag) < 10 ** (-decimals):
             value = value.real
     elif isinstance(value, np.ndarray):
