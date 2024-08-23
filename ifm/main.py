@@ -165,3 +165,18 @@ def foo(N, state):
 
 basis = foo(system.N, system.state)
 A = basis[basis.explosion == True]
+A.reset_index(inplace=True)
+for q in range(1, system.N + 1):
+    A.loc[:, f"qubit_{q}"] = A.apply(
+        lambda x: 0 if x["photon"] == q else x[f"qubit_{q}"], axis=1
+    )
+A.loc[:, "photon"] = 0
+del A["explosion"]
+for k in range(len(A)):
+    jaja = (0,) + tuple(
+        A[["photon"] + [f"qubit_{q}" for q in range(1, system.N)]]
+        .iloc[k]
+        .values
+    )
+    print(jaja)
+    basis.loc[jaja, "coeff"] += A.iloc[k]["coeff"]
