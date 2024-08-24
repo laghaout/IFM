@@ -10,7 +10,7 @@ from pydantic import BaseModel
 import numpy as np
 import quantum_information as qi
 import sympy as sp
-from sympy.physics.quantum import TensorProduct
+from sympy.physics.quantum import Ket, TensorProduct
 from types import SimpleNamespace
 
 
@@ -57,8 +57,8 @@ class System(BaseModel):
         )
 
         self.interact()
-        self.beamsplit()
-        self.measure_photon()
+        # self.beamsplit()
+        # self.measure_photon()
         # self.measure_qubits()
 
     def interact(self):
@@ -127,56 +127,76 @@ if __name__ == "__main__":
     system.disp_report()
 
 # %%
-from sympy.physics.quantum import Ket
 
 
-def foo(N, state):
-    # qubits = tuple(bin(j)[2:] for j in range(2**N))
-    # qubits = tuple("0" * (len(qubits[-1]) - len(j)) + j for j in qubits)
-    # photon = tuple((j, qubit)  for j in range(1, N+1) for qubit in qubits)
-    # print(photon)
+def interact(N: int, state: sp.Matrix):
+    # Define the Hilbert space.
     photon = list(range(0, N + 1))
     qubit = [0, 1]
-    product = [photon] + [qubit] * N
-    names = ["photon"] + [f"qubit_{k}" for k in range(1, N + 1)]
-    print(product)
-    print(names)
-    index = pd.MultiIndex.from_product(product, names=names)
+    Hilbert = SimpleNamespace(
+        **dict(
+            bases=[photon] + [qubit] * N,
+            names=["photon"] + [f"qubit_{k}" for k in range(1, N + 1)],
+        )
+    )
+
+    # Basis of the Hilbert space
+    index = pd.MultiIndex.from_product(Hilbert.bases, names=Hilbert.names)
     b = {n: sp.symbols(f"{n}") for n in range(0, N + 1)}
     basis = pd.DataFrame(
         dict(
-            coeff=[0] * 2**N + list(state),
-            # eigenvector=[Ket(b[1])]*len(system.state),
-            eigenvector=index,
+            # Coefficients of each basis vector
+            coeff=[sp.Float(0)] * 2**N + list(state),
+            # Basis vector in ket notation
+            eigenvector=index.map(lambda x: Ket(*[b[j] for j in x])),
+            # Interaction on the basis vector?
+            interaction=index.map(lambda x: x[x[0]] != 0),
         ),
         index=index,
     )
-    basis["eigenvector"] = basis.apply(
-        lambda x: Ket(*[b[j] for j in x.name]), axis=1
+
+    interacted = basis[basis["interaction"] == True]
+    interacted.reset_index(inplace=True)
+    # Reset each qubit to the vacuum it it's in the way of the photon.
+    for q in range(1, N + 1):
+        interacted.loc[:, f"qubit_{q}"] = interacted.apply(
+            lambda x: 0 if x["photon"] == q else x[f"qubit_{q}"], axis=1
+        )
+    # Reset all the photons to the vacuum since they're absorbed by the qubit
+    interacted.loc[:, "photon"] = 0
+
+    # Apply the interaction by shuffling the coefficients of the interacted
+    # qubits.
+    interacted.loc[:, "interaction"] = interacted[
+        ["photon"] + [f"qubit_{j}" for j in range(1, N + 1)]
+    ].apply(lambda x: tuple([j for j in x]), axis=1)
+    for k in interacted[["coeff", "interaction"]].itertuples(
+        index=True, name="Row"
+    ):
+        basis.loc[k.interaction, "coeff"] += k.coeff
+
+    # Set all the interacted terms to zero.
+    basis["coeff"] = basis.apply(
+        lambda x: x["coeff"] if x["interaction"] == False else sp.Float(0),
+        axis=1,
     )
-    basis["explosion"] = basis.apply(lambda x: x.name[x.name[0]] != 0, axis=1)
-    # explosion = basis.coeff[basis['explosion'] == True].sum()
-    # basis.loc[(0,)+(0,)*N] = None
-    # basis.loc[(0,)+(0,)*N, 'coeff'] = explosion
-    # basis.coeff = basis.apply(lambda x: 0 if x['explosion'] == True else x['coeff'], axis=1)
-    # basis['prob'] = None
+
     return basis
 
 
-basis = foo(system.N, system.state)
-A = basis[basis.explosion == True]
-A.reset_index(inplace=True)
-for q in range(1, system.N + 1):
-    A.loc[:, f"qubit_{q}"] = A.apply(
-        lambda x: 0 if x["photon"] == q else x[f"qubit_{q}"], axis=1
-    )
-A.loc[:, "photon"] = 0
-del A["explosion"]
-for k in range(len(A)):
-    jaja = (0,) + tuple(
-        A[["photon"] + [f"qubit_{q}" for q in range(1, system.N)]]
-        .iloc[k]
-        .values
-    )
-    print(jaja)
-    basis.loc[jaja, "coeff"] += A.iloc[k]["coeff"]
+basis = interact(system.N, system.state)
+basis["coeff"] = basis["coeff"].apply(
+    lambda x: x.subs(dict(N=system.N)).evalf()
+)
+jaja = basis["coeff"] @ np.conjugate(basis["coeff"])
+print(jaja.simplify())
+
+# interacted.drop(["interaction", "eigenvector"], inplace=True, axis=1)
+# for k in range(len(A)):
+#     jaja = (0,) + tuple(
+#         A[["photon"] + [f"qubit_{q}" for q in range(1, system.N)]]
+#         .iloc[k]
+#         .values
+#     )
+#     print(jaja)
+#     basis.loc[jaja, "coeff"] += A.iloc[k]["coeff"]
