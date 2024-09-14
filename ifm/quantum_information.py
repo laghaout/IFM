@@ -26,6 +26,13 @@ QUBITS_DICT = {
 }
 
 
+def norm(vector: sp.Matrix, subs: dict):
+    if not isinstance(vector, sp.Matrix):
+        vector = sp.Matrix(vector)
+    vector = vector.H.dot(vector)
+    return vector.subs(subs).evalf()
+
+
 def pure_qubit(
     q0: str | complex, q1: str | complex = None, to_qutip: bool = False
 ):
