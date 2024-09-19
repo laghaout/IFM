@@ -42,7 +42,6 @@ class System(BaseModel):
 
         # Pure photon-qubits state vector
         self.state = TensorProduct(self.photon, self.qubits)
-        self.x.state = self.state
 
         # Generate the report such that the photon-click outcomes are the
         # columns. The rows consist of the
@@ -57,84 +56,53 @@ class System(BaseModel):
         )
 
         self.interact()
-        # self.beamsplit()
-        # self.measure_photon()
-        # self.measure_qubits()
+        self.beamsplit()
+        self.measure_photon()
+        self.measure_qubits()
 
     def interact(self):
         print("==== Photon-qubit interaction")
 
-        N = self.N
-        state = self.state
-
         # Define the Hilbert space.
-        photon = list(range(0, N + 1))
+        photon = list(range(1, self.N + 1))
         qubit = [0, 1]
         Hilbert = SimpleNamespace(
             **dict(
-                bases=[photon] + [qubit] * N,
-                names=["photon"] + [f"qubit_{k}" for k in range(1, N + 1)],
+                bases=[photon] + [qubit] * self.N,
+                names=["photon"]
+                + [f"qubit_{k}" for k in range(1, self.N + 1)],
             )
         )
 
-        self.x.Hilbert = Hilbert  # TODO: Delete
-
         # Basis of the Hilbert space
         index = pd.MultiIndex.from_product(Hilbert.bases, names=Hilbert.names)
-        b = {n: sp.symbols(f"{n}") for n in range(0, N + 1)}
+        b = {n: sp.symbols(f"{n}") for n in range(0, self.N + 1)}
         basis = pd.DataFrame(
             dict(
                 # Coefficients of each basis vector. Note that the 0-photon
                 # subspace corresponding to the "exploded" qubit are
                 # initialized to 0.
-                coeff=[sp.Float(0)] * 2**N + list(state),
+                coeff=list(self.state),
                 # Basis vector in ket notation
                 eigenvector=index.map(lambda x: Ket(*[b[j] for j in x])),
-                # Interaction on the basis vector?
-                interaction=index.map(lambda x: x[x[0]] != 0),
+                # Interaction on the basis vector? If so, specify which qubit
+                # is involved. (Zero means no qubit was involved.)
+                interaction=index.map(lambda x: (x[x[0]] != 0) * x[0]),
+                # interaction=index.map(lambda x: x[x[0]] != 0),
             ),
             index=index,
         )
 
-        self.x.basis_0 = basis.copy()  # TODO: Delete
+        # Interacted subspace
+        self.x.interacted = basis[basis["interaction"] != 0]
 
-        # Select the subspace that undergoes a collision.
-        interacted = basis[basis["interaction"] == True]
-        interacted.reset_index(inplace=True)
-        # Reset each qubit to the vacuum if it's in the way of the photon.
-        for q in range(1, N + 1):
-            interacted.loc[:, f"qubit_{q}"] = interacted.apply(
-                lambda x: 0 if x["photon"] == q else x[f"qubit_{q}"], axis=1
-            )
-        # Reset all the photons to the vacuum since they're absorbed by the
-        # qubit.
-        interacted.loc[:, "photon"] = 0
+        # Post-selected non-interacted state: Set the interacted coefficients
+        # to zero
+        self.state = basis["coeff"].copy()
+        self.state[basis["interaction"] != 0] = 0
+        self.state = sp.Matrix(self.state.values)
 
-        self.x.interacted_0 = interacted.copy()  # TODO: Delete
-
-        # Apply the interaction by moving the coefficients of the interacted
-        # qubits.
-        interacted.loc[:, "interaction"] = interacted[
-            ["photon"] + [f"qubit_{j}" for j in range(1, N + 1)]
-        ].apply(lambda x: tuple([j for j in x]), axis=1)
-        for k in interacted[["coeff", "interaction"]].itertuples(
-            index=True, name="Row"
-        ):
-            print(k.interaction)
-            basis.loc[k.interaction, "coeff"] += k.coeff
-
-        self.x.interacted_1 = interacted.copy()  # TODO: Delete
-
-        # Set all the interacted terms to zero.
-        basis["coeff"] = basis.apply(
-            lambda x: x["coeff"] if x["interaction"] == False else sp.Float(0),
-            axis=1,
-        )
-
-        # self.state = sp.Matrix(
-        #     basis["coeff"].values[-len(self.state):])
-
-        self.x.basis = basis.copy()  # TODO: Delete
+        self.x.basis = basis
 
     def beamsplit(self):  # CHECKED
         print("==== Beam splitter transformation")
@@ -192,29 +160,25 @@ if __name__ == "__main__":
     system = System(
         # qubits=tuple(dict(q0=k) for k in '½'*2),
         # qubits=(dict(q0='a', q1='b'), dict(q0='x', q1='y'),),
-        # qubits=(dict(q0=f"a{k}", q1=f"b{k}") for k in range(1, 3)),
-        qubits=(dict(q0=k) for k in "½½½")
+        # qubits=(dict(q0=f"a{k}", q1=f"b{k}") for k in range(1, 4)),
+        qubits=(dict(q0=k) for k in "⅓⅓½")
     )
     system()
     system.disp_report()
     x = system.x
-
-# %%
-
-basis = system.x.basis
-basis["coeff"] = basis["coeff"].apply(
-    lambda x: x.subs(dict(N=system.N)).evalf()
-)
-print(basis.coeff @ basis.coeff)
-
-# norm = dict(
-#     basis_0=qi.norm(basis["coeff"].iloc[:2**system.N], dict(N=system.N)),
-#     basis_rest=qi.norm(basis["coeff"].iloc[2**system.N:], dict(N=system.N)),
-#     basis=qi.norm(basis["coeff"], dict(N=system.N)),
-#     state=qi.norm(system.state, dict(N=system.N))
-#     )
-
-# for k, v in norm.items():
-#     print(f"{k} = {v.evalf()}")
-
-# x = system.x
+    print(
+        "|state| =",
+        (system.state.H * system.state).subs(dict(N=system.N)).evalf()[0],
+    )
+    print(
+        "|interacted| =",
+        (x.interacted.coeff @ np.conjugate(x.interacted.coeff))
+        .subs(dict(N=system.N))
+        .evalf(),
+    )
+    print(
+        "|basis| =",
+        (x.basis.coeff @ x.basis.coeff.map(np.conj))
+        .subs(dict(N=system.N))
+        .evalf(),
+    )
