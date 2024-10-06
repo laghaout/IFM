@@ -58,7 +58,7 @@ class System(BaseModel):
         self.interact()
         self.beamsplit()
         self.measure_photon()
-        self.measure_qubits()
+        # self.measure_qubits()
 
     def interact(self):
         print("==== Photon-qubit interaction")
@@ -92,12 +92,15 @@ class System(BaseModel):
             ),
             index=index,
         )
+        basis["interaction"] = basis["interaction"].map(
+            lambda x: False if x == 0 else x
+        )
 
         # Interacted subspace
-        self.x.interacted = basis[basis["interaction"] != 0]
+        self.x.interacted = basis[basis["interaction"] != False]
 
         # Post-selected non-interacted state: Set the interacted coefficients
-        # to zero
+        # to zero.
         self.state = basis["coeff"].copy()
         self.state[basis["interaction"] != 0] = 0
         self.state = sp.Matrix(self.state.values)
@@ -160,12 +163,14 @@ if __name__ == "__main__":
     system = System(
         # qubits=tuple(dict(q0=k) for k in '½'*2),
         # qubits=(dict(q0='a', q1='b'), dict(q0='x', q1='y'),),
-        # qubits=(dict(q0=f"a{k}", q1=f"b{k}") for k in range(1, 4)),
-        qubits=(dict(q0=k) for k in "⅓⅓½")
+        qubits=(dict(q0=f"a{k}", q1=f"b{k}") for k in range(1, 4)),
+        # qubits=(dict(q0=k) for k in "½j⅓i") # ½⅓⅔ij01
     )
     system()
     system.disp_report()
     x = system.x
+    state = system.state
+
     print(
         "|state| =",
         (system.state.H * system.state).subs(dict(N=system.N)).evalf()[0],
@@ -182,3 +187,16 @@ if __name__ == "__main__":
         .subs(dict(N=system.N))
         .evalf(),
     )
+
+# %%
+
+
+def post_photon_click(photon, df=x.basis):
+    mask = df.index.get_level_values("photon") == photon
+
+    # Use numpy to find the integer positions where the mask is True
+    integer_indices = list(np.where(mask)[0])
+    return integer_indices
+
+
+print(system.state[list(post_photon_click(1)), :])

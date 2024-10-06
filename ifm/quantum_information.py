@@ -41,7 +41,9 @@ def pure_qubit(
         q = QUBITS_DICT[q0]
     # Symbolic
     elif isinstance(q0, str) and isinstance(q1, str):
-        q0, q1 = sp.symbols(f"{q0} {q1}")
+        # q0, q1 = sp.symbols(f"{q0} {q1}", complex=True)
+        q0 = sp.Symbol(f"{q0}", complex=True)
+        q1 = sp.Symbol(f"{q1}", complex=True)
         q = sp.Matrix([q0, q1])
     # Explicit
     else:
