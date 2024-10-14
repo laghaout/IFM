@@ -32,8 +32,12 @@ class System(BaseModel):
         self.N = len(self.qubits)
         qubits = tuple(qi.pure_qubit(**qubit) for qubit in self.qubits)
         self.qubits = qubits[0]
+        self.x.realign = qi.align_with_0(qubits[0])
+
         if self.N > 1:
             for q in range(1, self.N):
+                temp = qi.align_with_0(qubits[q])
+                self.x.realign = TensorProduct(self.x.realign, temp)
                 self.qubits = TensorProduct(self.qubits, qubits[q])
 
         # Pure photon state vector that is equally delocalized over the N modes
@@ -160,11 +164,14 @@ class System(BaseModel):
 
 
 if __name__ == "__main__":
+    # qubits = tuple(dict(q0=k) for k in '½'*2)
+    # qubits = (dict(q0='a', q1='b'), dict(q0='x', q1='y'),)
+    # qubits = (dict(q0=f"a{k}", q1=f"b{k}") for k in range(1, 3))
+    # qubits = (dict(q0=k) for k in "⅓0i") # ½⅓⅔ij01
+    qubits = (dict(q0=k) for k in "½½")  # ½⅓⅔ij01
+    qubits = tuple(qubits)
     system = System(
-        # qubits=tuple(dict(q0=k) for k in '½'*2),
-        # qubits=(dict(q0='a', q1='b'), dict(q0='x', q1='y'),),
-        qubits=(dict(q0=f"a{k}", q1=f"b{k}") for k in range(1, 4)),
-        # qubits=(dict(q0=k) for k in "½j⅓i") # ½⅓⅔ij01
+        qubits=qubits,
     )
     system()
     system.disp_report()
@@ -191,6 +198,16 @@ if __name__ == "__main__":
 # %%
 
 
+def measurement(seq: str):
+    M = sp.Matrix([1, 0]) if seq[0] == "0" else sp.Matrix([0, 1])
+    if len(seq) > 1:
+        for q in range(1, len(seq)):
+            temp_M = sp.Matrix([1, 0]) if seq[q] == "0" else sp.Matrix([0, 1])
+            M = TensorProduct(M, temp_M)
+
+    return M
+
+
 def post_photon_click(photon, df=x.basis):
     mask = df.index.get_level_values("photon") == photon
 
@@ -199,4 +216,18 @@ def post_photon_click(photon, df=x.basis):
     return integer_indices
 
 
-print(system.state[list(post_photon_click(1)), :])
+# %%
+print("==== Realign")
+for j in range(1, len(qubits) + 1):
+    # Select the state after the particular photon click.
+    print(f"click at {j}:")
+    state = system.state[list(post_photon_click(j)), :]
+
+    realign = system.x.realign.copy()
+
+    A = qi.unitary_transform(realign, state)
+
+    B = qi.Born_rule(
+        measurement("01"), A
+    )  # Each 1 means "definitely disturbed"
+    print(B.subs(dict(N=system.N)).evalf(), "\n")

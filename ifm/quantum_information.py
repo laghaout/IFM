@@ -79,13 +79,14 @@ def vector_to_matrix(vector: sp.Matrix) -> sp.Matrix:
 
 
 def unitary_transform(unitary: np.ndarray, state: np.ndarray) -> np.ndarray:
-    if len(state.shape) > 1:
+    if state.shape[1] > 1:
         return unitary @ state @ np.conjugate(unitary)
     else:
         return unitary @ state
 
 
 def align_with_0(q: sp.Matrix):
+    assert q.shape[1] == 1
     return sp.Matrix([[np.conjugate(q[0]), np.conjugate(q[1])], [-q[1], q[0]]])
 
 
@@ -223,5 +224,3 @@ def trim_imaginary(matrix, tol=TOL):
         matrix = matrix.real
 
     return matrix
-
-    return purity
