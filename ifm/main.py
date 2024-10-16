@@ -18,6 +18,7 @@ class System(BaseModel):
     qubits: tuple
     # Determined from the qubits
     photon: np.ndarray = None
+    realign: np.ndarray = None
     state: np.ndarray = None
     N: int = None
     report: pd.DataFrame = None
@@ -32,12 +33,12 @@ class System(BaseModel):
         self.N = len(self.qubits)
         qubits = tuple(qi.pure_qubit(**qubit) for qubit in self.qubits)
         self.qubits = qubits[0]
-        self.x.realign = qi.align_with_0(qubits[0])
+        self.realign = qi.align_with_0(qubits[0])
 
         if self.N > 1:
             for q in range(1, self.N):
-                temp = qi.align_with_0(qubits[q])
-                self.x.realign = TensorProduct(self.x.realign, temp)
+                self.realign = TensorProduct(
+                    self.realign, qi.align_with_0(qubits[q]))
                 self.qubits = TensorProduct(self.qubits, qubits[q])
 
         # Pure photon state vector that is equally delocalized over the N modes
@@ -62,7 +63,7 @@ class System(BaseModel):
         self.interact()
         self.beamsplit()
         self.measure_photon()
-        # self.measure_qubits()
+        self.measure_qubits()
 
     def interact(self):
         print("==== Photon-qubit interaction")
@@ -155,12 +156,30 @@ class System(BaseModel):
             pass
         print(report.T)
 
-    def measure_qubits(self):
-        print("==== Measure the qubits")
-        for n in range(1, self.N + 1):
-            print(f"- Photon measurement at {n}:")
-            for n in range(1, self.N + 1):
-                print(f"  - Qubit measurement {n}:")
+    def post_photon_click(self, photon):
+        mask = self.x.basis.index.get_level_values("photon") == photon
+    
+        # Use numpy to find the integer positions where the mask is True
+        integer_indices = list(np.where(mask)[0])
+
+        return self.state[list(integer_indices), :]
+
+    def measure_qubits(self, alignments="000"):
+        print("==== Check the alignment of the qubits")
+        for j in range(1, len(qubits) + 1):
+            # Select the state after the particular photon click.
+            print(f"click at {j}:")
+            state = self.post_photon_click(j)
+            
+            # Try to realign all the qubits.
+            A = qi.unitary_transform(self.realign, state)
+            
+            # Joint measurement to check the alignment of all qubits.
+            B = qi.Born_rule(qi.measurement_on_energy(alignments), A)
+            
+            probability = qi.sympy_round(B.subs(dict(N=self.N)).evalf())
+            print(probability, "\n")
+
 
 
 if __name__ == "__main__":
@@ -168,7 +187,7 @@ if __name__ == "__main__":
     # qubits = (dict(q0='a', q1='b'), dict(q0='x', q1='y'),)
     # qubits = (dict(q0=f"a{k}", q1=f"b{k}") for k in range(1, 3))
     # qubits = (dict(q0=k) for k in "⅓0i") # ½⅓⅔ij01
-    qubits = (dict(q0=k) for k in "½½")  # ½⅓⅔ij01
+    qubits = (dict(q0=k) for k in "½½½")  # ½⅓⅔ij01
     qubits = tuple(qubits)
     system = System(
         qubits=qubits,
@@ -194,40 +213,3 @@ if __name__ == "__main__":
         .subs(dict(N=system.N))
         .evalf(),
     )
-
-# %%
-
-
-def measurement(seq: str):
-    M = sp.Matrix([1, 0]) if seq[0] == "0" else sp.Matrix([0, 1])
-    if len(seq) > 1:
-        for q in range(1, len(seq)):
-            temp_M = sp.Matrix([1, 0]) if seq[q] == "0" else sp.Matrix([0, 1])
-            M = TensorProduct(M, temp_M)
-
-    return M
-
-
-def post_photon_click(photon, df=x.basis):
-    mask = df.index.get_level_values("photon") == photon
-
-    # Use numpy to find the integer positions where the mask is True
-    integer_indices = list(np.where(mask)[0])
-    return integer_indices
-
-
-# %%
-print("==== Realign")
-for j in range(1, len(qubits) + 1):
-    # Select the state after the particular photon click.
-    print(f"click at {j}:")
-    state = system.state[list(post_photon_click(j)), :]
-
-    realign = system.x.realign.copy()
-
-    A = qi.unitary_transform(realign, state)
-
-    B = qi.Born_rule(
-        measurement("01"), A
-    )  # Each 1 means "definitely disturbed"
-    print(B.subs(dict(N=system.N)).evalf(), "\n")

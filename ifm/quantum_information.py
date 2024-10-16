@@ -7,8 +7,8 @@ Created on Mon Aug  5 16:38:32 2024
 
 from IPython.display import display, Math
 import numpy as np
-import qutip as qt
 import sympy as sp
+from sympy.physics.quantum import TensorProduct
 
 
 DECIMALS = 5
@@ -159,18 +159,25 @@ def is_unitary(matrix, tol=TOL):
     return np.allclose(product, np.eye(matrix.shape[0]), atol=tol)
 
 
-def round(value, decimals=DECIMALS):
+def round(value, decimals=DECIMALS, tol=TOL):
     if isinstance(value, np.complex64) or isinstance(value, complex):
         if abs(value.imag) < 10 ** (-decimals):
             value = value.real
     elif isinstance(value, np.ndarray):
         if (abs(value.imag) < 10 ** (-decimals)).all():
             value = value.real
-    if value < 10 ** (-decimals):
+    if value < tol:
         return 0
 
     return np.round(value, decimals)
 
+def sympy_round(expr, decimals=DECIMALS, tol=TOL):
+    expr = np.round(np.array(expr).astype(complex), decimals=decimals)
+    if np.imag(expr) < TOL:
+        expr = np.real(expr)
+    return expr
+
+    
 
 def purity(rho, tol=TOL):
     """
@@ -224,3 +231,13 @@ def trim_imaginary(matrix, tol=TOL):
         matrix = matrix.real
 
     return matrix
+
+def measurement_on_energy(seq: str):
+    # Convert a string of 0 and 1 as to actual projectors along the z axis.
+    M = sp.Matrix([1, 0]) if seq[0] == "0" else sp.Matrix([0, 1])
+    if len(seq) > 1:
+        for q in range(1, len(seq)):
+            temp_M = sp.Matrix([1, 0]) if seq[q] == "0" else sp.Matrix([0, 1])
+            M = TensorProduct(M, temp_M)
+
+    return M
