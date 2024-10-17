@@ -38,7 +38,8 @@ class System(BaseModel):
         if self.N > 1:
             for q in range(1, self.N):
                 self.realign = TensorProduct(
-                    self.realign, qi.align_with_0(qubits[q]))
+                    self.realign, qi.align_with_0(qubits[q])
+                )
                 self.qubits = TensorProduct(self.qubits, qubits[q])
 
         # Pure photon state vector that is equally delocalized over the N modes
@@ -158,28 +159,37 @@ class System(BaseModel):
 
     def post_photon_click(self, photon):
         mask = self.x.basis.index.get_level_values("photon") == photon
-    
+
         # Use numpy to find the integer positions where the mask is True
         integer_indices = list(np.where(mask)[0])
 
         return self.state[list(integer_indices), :]
 
-    def measure_qubits(self, alignments="000"):
+    def measure_qubits(self):
         print("==== Check the alignment of the qubits")
-        for j in range(1, len(qubits) + 1):
+
+        def helper(alignments, click_at):
             # Select the state after the particular photon click.
-            print(f"click at {j}:")
-            state = self.post_photon_click(j)
-            
+            state = self.post_photon_click(click_at)
+
             # Try to realign all the qubits.
             A = qi.unitary_transform(self.realign, state)
-            
+
             # Joint measurement to check the alignment of all qubits.
             B = qi.Born_rule(qi.measurement_on_energy(alignments), A)
-            
-            probability = qi.sympy_round(B.subs(dict(N=self.N)).evalf())
-            print(probability, "\n")
 
+            probability = qi.sympy_round(B.subs(dict(N=self.N)).evalf())
+
+            return probability
+
+        index = [bin(j)[2:] for j in range(2**self.N)]
+        index = ["0" * (len(index[-1]) - len(j)) + j for j in index]
+        df = pd.DataFrame(columns=range(1, self.N + 1), index=index)
+
+        for j in df.columns:
+            df[j] = df.index.map(lambda x: helper(x, j))
+
+        self.x.df = df.T
 
 
 if __name__ == "__main__":
@@ -187,7 +197,7 @@ if __name__ == "__main__":
     # qubits = (dict(q0='a', q1='b'), dict(q0='x', q1='y'),)
     # qubits = (dict(q0=f"a{k}", q1=f"b{k}") for k in range(1, 3))
     # qubits = (dict(q0=k) for k in "⅓0i") # ½⅓⅔ij01
-    qubits = (dict(q0=k) for k in "½½½")  # ½⅓⅔ij01
+    qubits = (dict(q0=k) for k in "½⅓i")  # ½⅓⅔ij01
     qubits = tuple(qubits)
     system = System(
         qubits=qubits,
@@ -213,3 +223,7 @@ if __name__ == "__main__":
         .subs(dict(N=system.N))
         .evalf(),
     )
+
+    print(system.x.df)
+
+# %%
