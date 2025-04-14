@@ -23,6 +23,9 @@ QUBITS_DICT = {
     "1": sp.Matrix([0, 1]),
     "⅓": sp.Matrix([1, sp.sqrt(2)]) / sp.sqrt(3),
     "⅔": sp.Matrix([sp.sqrt(2), 1]) / sp.sqrt(3),
+    "x": sp.Matrix([sp.sqrt(6), -sp.I]) / sp.sqrt(7),
+    "y": sp.Matrix([sp.sqrt(5), sp.I]) / sp.sqrt(6),
+    "z": sp.Matrix([sp.sqrt(3), sp.I]) / sp.sqrt(4),
 }
 
 

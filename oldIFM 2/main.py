@@ -24,6 +24,7 @@ class System(BaseModel):
     report: pd.DataFrame = None
     BS: None = None  # TODO: remove
     x: dict = SimpleNamespace(**dict())
+    skip: bool = False
 
     class Config:
         arbitrary_types_allowed = True
@@ -101,15 +102,17 @@ class System(BaseModel):
         basis["interaction"] = basis["interaction"].map(
             lambda x: False if x == 0 else x
         )
+        
+        
+        if self.skip is False: 
+            # Interacted subspace
+            self.x.interacted = basis[basis["interaction"] != False]
 
-        # Interacted subspace
-        self.x.interacted = basis[basis["interaction"] != False]
-
-        # Post-selected non-interacted state: Set the interacted coefficients
-        # to zero.
-        self.state = basis["coeff"].copy()
-        self.state[basis["interaction"] != 0] = 0
-        self.state = sp.Matrix(self.state.values)
+            # Post-selected non-interacted state: Set the interacted coefficients
+            # to zero.
+            self.state = basis["coeff"].copy()
+            self.state[basis["interaction"] != 0] = 0
+            self.state = sp.Matrix(self.state.values)
 
         self.x.basis = basis
 
@@ -156,6 +159,26 @@ class System(BaseModel):
         except BaseException:
             pass
         print(report.T)
+        
+        print(
+            "|state| =",
+            (self.state.H * self.state).subs(dict(N=self.N)).evalf()[0],
+        )
+        if self.skip is False:
+            print(
+                "|interacted| =",
+                (self.x.interacted.coeff @ np.conjugate(self.x.interacted.coeff))
+                .subs(dict(N=self.N))
+                .evalf(),
+            )
+        print(
+            "|basis| =",
+            (self.x.basis.coeff @ self.x.basis.coeff.map(np.conj))
+            .subs(dict(N=self.N))
+            .evalf(),
+        )
+    
+        print(self.x.df)        
 
     def post_photon_click(self, photon):
         mask = self.x.basis.index.get_level_values("photon") == photon
@@ -172,13 +195,23 @@ class System(BaseModel):
             # Select the state after the particular photon click.
             state = self.post_photon_click(click_at)
 
+            # zaza = state.subs(dict(N=self.N)).evalf()
+            # # state = sp.Matrix([[.], [.5], [.5], [0]])
+            # print(zaza)
+
             # Try to realign all the qubits.
             A = qi.unitary_transform(self.realign, state)
 
             # Joint measurement to check the alignment of all qubits.
             B = qi.Born_rule(qi.measurement_on_energy(alignments), A)
 
-            probability = qi.sympy_round(B.subs(dict(N=self.N)).evalf())
+            probability = B
+            
+            try: 
+                probability = B.subs(dict(N=self.N)).evalf()
+                probability = qi.sympy_round(probability)
+            except BaseException:
+                pass
 
             return probability
 
@@ -189,41 +222,51 @@ class System(BaseModel):
         for j in df.columns:
             df[j] = df.index.map(lambda x: helper(x, j))
 
-        self.x.df = df.T
+        self.x.df = df
 
+# %%
 
 if __name__ == "__main__":
     # qubits = tuple(dict(q0=k) for k in '½'*2)
     # qubits = (dict(q0='a', q1='b'), dict(q0='x', q1='y'),)
     # qubits = (dict(q0=f"a{k}", q1=f"b{k}") for k in range(1, 3))
     # qubits = (dict(q0=k) for k in "⅓0i") # ½⅓⅔ij01
-    qubits = (dict(q0=k) for k in "½⅓i")  # ½⅓⅔ij01
+    qubits = (dict(q0=k) for k in "½½")  # ½⅓⅔ij01  j⅔⅓  j⅔zx
     qubits = tuple(qubits)
     system = System(
-        qubits=qubits,
+        qubits=qubits,  
+        # skip=True
     )
     system()
     system.disp_report()
     x = system.x
     state = system.state
+    # print(x.df)
 
-    print(
-        "|state| =",
-        (system.state.H * system.state).subs(dict(N=system.N)).evalf()[0],
-    )
-    print(
-        "|interacted| =",
-        (x.interacted.coeff @ np.conjugate(x.interacted.coeff))
-        .subs(dict(N=system.N))
-        .evalf(),
-    )
-    print(
-        "|basis| =",
-        (x.basis.coeff @ x.basis.coeff.map(np.conj))
-        .subs(dict(N=system.N))
-        .evalf(),
-    )
-
-    print(system.x.df)
-
-# %%
+#%%
+if False:
+    N = 3
+    a = np.sqrt(1/2)
+    b = np.sqrt(2/3)
+    c = np.sqrt(3/4)
+    d = np.sqrt(6/7)
+    
+    
+    # P_000_1 = ((a**2 + b**2 + c**2)/N)**2
+    # P_100_1 = (a*np.sqrt(1-a**2)/N)**2
+    # P_001_1 = (c*np.sqrt(1-c**2)/N)**2
+    # P_010_1 = (b*np.sqrt(1-b**2)/N)**2
+    # print(f"{P_000_1 = }")
+    # print(f"{P_100_1 = }")
+    # print(f"{P_010_1 = }")
+    # print(f"{P_001_1 = }")
+    
+    P_000_2 = ((a**2 + b**2 + c**2 + d**2)/N)**2
+    P_100_2 = (a*np.sqrt(1-a**2)/N)**2
+    P_001_2 = (c*np.sqrt(1-c**2)/N)**2
+    P_010_2 = (b*np.sqrt(1-b**2)/N)**2
+    print(f"{P_000_2 = }")
+    print(f"{P_100_2 = }")
+    print(f"{P_010_2 = }")
+    print(f"{P_001_2 = }")
+    
