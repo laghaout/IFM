@@ -2,7 +2,7 @@
 """
 Created on Mon Apr 14 19:52:40 2025
 
-@author: amine
+@author: Amine Laghaout
 """
 
 from functools import reduce
@@ -11,8 +11,6 @@ import pandas as pd
 from pydantic import BaseModel
 from typing import Optional
 
-TOL = 1e-9
-
 
 class IFM(BaseModel):
     N: Optional[int] = None                         # Number of qubits
@@ -20,14 +18,13 @@ class IFM(BaseModel):
     psi_qubits: Optional[object] = None             # Initial qubit states
     psi: Optional[object] = None                    # Overall state
     sep: str = '⊗'                                  # Qubit-photon separator
-    interaction: str | None = 'Elitzur-Vaidman'     # Type of interaction
+    interaction: str | None = 'Elitzur-Vaidman'     # Photon-qubit interaction
     realign: bool = False                           # Realign the qubits?
-
 
     def __call__(self):
 
-        # If the number of qubits is specified, use an equal distribution of
-        # the photonic and qubit modes. This shall be the default.
+        # By default, if the number of qubits is specified, use an equal
+        # distribution of the photonic and qubit modes.
         if isinstance(self.N, int):
             self.psi_photon = np.hstack([np.zeros(1), np.ones(self.N)])
             self.psi_qubits = np.ones([self.N, 2])
@@ -37,8 +34,8 @@ class IFM(BaseModel):
 
         self.validate()
 
-        print("psi_photon =\n", self.psi_photon)
-        print("psi_qubits =\n", self.psi_qubits)
+        print("psi_photon =", self.psi_photon, sep='\n')
+        print("psi_qubits =", self.psi_qubits, sep='\n')
 
         self.psi_qubits = reduce(np.kron, self.psi_qubits)
         self.psi = np.kron(self.psi_qubits, self.psi_photon)
@@ -90,26 +87,27 @@ class IFM(BaseModel):
 
         match self.interaction:
             case "Elitzur-Vaidman":
-                # Identify where the "head-on collision" happens and specify 
-                # which 0-photon (i.e., absorbed photon) state it transitions 
-                # to. Cf. the bottom of p. 113 of the notebook.
+                # Identify the modes where the photon undergoes a "head-on
+                # collision" with the qubit in its path. This will determine
+                # which 0-photon (i.e., absorbed photon) state will acquire
+                # the probability amplitude.
                 self.psi['collision'] = self.psi.apply(
                     lambda x: (x.name[0], 0) if x.ket[x.name[1]-1] == '1'
                     else None,
                     axis=1)
-                
                 collided = self.psi[self.psi['collision'].notna()].copy()
                 for index, row in collided.iterrows():
-                    self.psi.loc[row['collision'], 'amplitude'] += row['amplitude']
+                    self.psi.loc[
+                        row['collision'], 'amplitude'] += row['amplitude']
                     self.psi.loc[index, 'amplitude'] = 0
             case _:
                 pass
 
         norm = self.norm(self.psi.amplitude)
-        print(norm)
+        print("Norm before normalization:", norm)
         self.psi.amplitude = self.psi.amplitude / norm
         norm = self.norm(self.psi.amplitude)
-        print(norm)
+        print("Norm after normalization:", norm)
 
     def beam_split(self):
         print("==== Beam-split")
@@ -135,7 +133,7 @@ class IFM(BaseModel):
     @staticmethod
     def symmetric_BS(N, add_qubits: bool = True):
         phi = np.exp(2*np.pi*1j/N)
-        BS = np.empty((N+1, N+1), dtype=complex)
+        BS = np.zeros((N+1, N+1), dtype=complex)
 
         for n in range(N+1):
             for m in range(N+1):
@@ -152,7 +150,7 @@ class IFM(BaseModel):
         # Add the identity to all the qubit modes.
         if add_qubits:
             BS = np.kron(np.eye(2**N), BS)
-            
+
         return BS
 
     @staticmethod
@@ -164,7 +162,7 @@ class IFM(BaseModel):
         return bin(k)[2:].zfill(N)[-N:]
     
     @staticmethod
-    def iround(c: complex, tol=TOL) -> complex:
+    def iround(c: complex, tol=1e-9) -> complex:
         if abs(np.imag(c)) < tol:
             c = np.real(c)
         if abs(np.real(c)) < tol:
@@ -175,18 +173,15 @@ class IFM(BaseModel):
     def norm(psi):
         return np.sqrt(psi @ np.conjugate(psi))
 
-#%%
-# params = dict(
-#     psi_photon=np.array([int(k) for k in '011']),
-#     psi_qubits=np.array([int(k) for k in '10'+'10']).reshape(2,2))
-# ifm = IFM(**params)
+#%% Experiment
 
-ifm = IFM(N=2)
+if __name__ == "__main__":
+    params = dict(
+        psi_photon=np.array([int(k) for k in '011']),
+        psi_qubits=np.array(
+            [int(k) for k in ''.join(['10', '01'])]).reshape(2,2))
+    # params = dict(N=2)
 
-ifm()
-psi = ifm.psi
-
-
-    
-    
-
+    ifm = IFM(**params)
+    ifm()
+    psi = ifm.psi
