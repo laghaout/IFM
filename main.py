@@ -138,14 +138,11 @@ class IFM(BaseModel):
         for n in range(N+1):
             for m in range(N+1):
                 if n > 0 and m > 0:
-                    BS[n, m] = phi**((n-1)*(m-1))
+                    BS[n, m] = phi**((n-1)*(m-1))/np.sqrt(N)
                 elif n == m == 0:
                     BS[n, m] = 1
                 else:
                     BS[n, m] = 0
-
-        # Normalize.
-        BS /= np.sqrt(N)
 
         # Add the identity to all the qubit modes.
         if add_qubits:
@@ -176,11 +173,11 @@ class IFM(BaseModel):
 #%% Experiment
 
 if __name__ == "__main__":
-    params = dict(
-        psi_photon=np.array([int(k) for k in '011']),
-        psi_qubits=np.array(
-            [int(k) for k in ''.join(['10', '01'])]).reshape(2,2))
-    # params = dict(N=2)
+    # params = dict(
+    #     psi_photon=np.array([int(k) for k in '011']),
+    #     psi_qubits=np.array(
+    #         [int(k) for k in ''.join(['10', '01'])]).reshape(2,2))
+    params = dict(N=10)
 
     ifm = IFM(**params)
     ifm()
