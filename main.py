@@ -19,7 +19,7 @@ class IFM(BaseModel):
     psi: Optional[object] = None                    # Overall state
     sep: str = '⊗'                                  # Qubit-photon separator
     interaction: str | None = 'Elitzur-Vaidman'     # Photon-qubit interaction
-    realign: bool = False                           # Realign the qubits?
+    outcomes: object = None                         # Summary of outcomes
 
     def __call__(self):
 
@@ -51,9 +51,9 @@ class IFM(BaseModel):
 
         self.interact()         # The photon and qubit states interact.
         self.beam_split()       # The photon undergoes a beam splitting.
-        self.measure_photon()   # The photon is measured.
-        self.realign_qubits()   # The qubits are realigned.
-        self.measure_qubits()   # The qubits are measured.
+        self.measure()          # Measure.
+        self.realign()          # The qubits are realigned.
+        self.measure()          # Measure.
 
     def validate(self):
 
@@ -113,22 +113,47 @@ class IFM(BaseModel):
         print("==== Beam-split")
         self.psi.amplitude = self.symmetric_BS(self.N) @ self.psi.amplitude
 
-    def measure_photon(self):
-        print("==== Measure photon")
-        for n in range(self.N+1):
-            mask = self.psi.index.map(lambda x: 1 if x[1] == n else 0)
-            amplitude = mask * self.psi.amplitude
-            probability = amplitude @ np.conjugate(amplitude)
-            print(f'Click at {n}:', self.iround(probability))
+    def measure_at(self, n: int = None, qubits: str = None) -> float:
+        mask = np.ones(len(self.psi))
+        if n is not None:
+            mask *= self.psi.index.map(lambda x: 1 if x[1] == n else 0)
+        if qubits is not None:
+            mask *= self.psi.ket.apply(
+                lambda x: 1 if x.split(self.sep)[0] == qubits else 0)
+        amplitude = mask * self.psi.amplitude
+        probability = amplitude @ np.conjugate(amplitude)
+        return self.iround(probability)
 
-    def realign_qubits(self):
-        if self.realign:
-            pass
-        else:
-            pass
+    def measure(self):
+        print("==== Measure")
 
-    def measure_qubits(self):
-        print("==== Measure qubits")
+        qubit_outcomes = [
+            self.int_to_binary(k, self.N) for k in range(2**self.N)]
+
+        self.outcomes = pd.DataFrame(
+            index=pd.Index(range(self.N+1), name='n'),
+            columns=["probability"]+qubit_outcomes
+            )
+        self.outcomes["probability"] = self.outcomes.index.map(
+            lambda n: self.measure_at(n=n))
+        
+        assert np.isclose(self.outcomes["probability"].sum(), 1)
+        
+        self.outcomes[qubit_outcomes] = pd.DataFrame(
+            [qubit_outcomes] * len(self.outcomes), 
+            index=self.outcomes.index, columns=qubit_outcomes)
+        
+        for outcome in qubit_outcomes:
+            self.outcomes[outcome] = self.outcomes.apply(
+                lambda x: self.measure_at(x.name, x[outcome]), axis=1)
+        
+        assert np.isclose(
+            self.outcomes[qubit_outcomes].sum(axis=1),
+            self.outcomes["probability"]).all()
+
+    def realign(self):
+        print("==== Measure")
+        
 
     @staticmethod
     def symmetric_BS(N, add_qubits: bool = True):
@@ -151,11 +176,12 @@ class IFM(BaseModel):
         return BS
 
     @staticmethod
-    def int_to_binary(k, N):
+    def int_to_binary(k: int, N: int) -> str:
         """
-        Convert integer k to a binary string of length N,
-        using '0' and '1' characters.
+        Convert integer k to a binary string of length N, using '0' and '1'
+        characters.
         """
+        assert 2**N >= k
         return bin(k)[2:].zfill(N)[-N:]
     
     @staticmethod
@@ -167,18 +193,21 @@ class IFM(BaseModel):
         return c
     
     @staticmethod
-    def norm(psi):
+    def norm(psi) -> float:
         return np.sqrt(psi @ np.conjugate(psi))
 
 #%% Experiment
 
 if __name__ == "__main__":
-    # params = dict(
-    #     psi_photon=np.array([int(k) for k in '011']),
-    #     psi_qubits=np.array(
-    #         [int(k) for k in ''.join(['10', '01'])]).reshape(2,2))
-    params = dict(N=10)
+    params = dict(
+        psi_photon=np.array([int(k) for k in '0111']),
+        psi_qubits=np.array(
+            [int(k) for k in ''.join(['01', '10', '01'])]).reshape(3,2))
+    # params = dict(N=3)
 
     ifm = IFM(**params)
     ifm()
     psi = ifm.psi
+    outcomes = ifm.outcomes
+    
+    print(outcomes)
