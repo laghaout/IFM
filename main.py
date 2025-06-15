@@ -13,9 +13,9 @@ from typing import Optional
 
 
 class IFM(BaseModel):
-    N: Optional[int] = None                         # Number of qubits
-    psi_photon: Optional[object] = None             # Initial photonic state
-    psi_qubits: Optional[object] = None             # Initial qubit states
+    N: int = None                                   # Number of qubits
+    psi_photon: object = None                       # Initial photonic state
+    psi_qubits: object = None                       # Initial qubit states
     psi: Optional[object] = None                    # Overall state
     sep: str = '⊗'                                  # Qubit-photon separator
     interaction: str | None = 'Elitzur-Vaidman'     # Photon-qubit interaction
@@ -29,7 +29,6 @@ class IFM(BaseModel):
             self.psi_photon = np.hstack([np.zeros(1), np.ones(self.N)])
             self.psi_qubits = np.ones([self.N, 2])
         else:
-            assert len(self.psi_photon) == self.psi_qubits.shape[0] + 1
             self.N = len(self.psi_qubits)
 
         self.validate()
@@ -37,12 +36,10 @@ class IFM(BaseModel):
         print("psi_photon =", self.psi_photon, sep='\n')
         print("psi_qubits =", self.psi_qubits, sep='\n')
 
-        self.psi_qubits = reduce(np.kron, self.psi_qubits)
-        self.psi = np.kron(self.psi_qubits, self.psi_photon)
-
         # Assemble the overall state.
-        max_k = 2**(self.N)
-        index_tuples = [(k, n) for k in range(max_k)
+        psi_qubits = reduce(np.kron, self.psi_qubits)
+        self.psi = np.kron(psi_qubits, self.psi_photon)
+        index_tuples = [(k, n) for k in range(2**(self.N))
                         for n in range(self.N + 1)]
         index = pd.MultiIndex.from_tuples(index_tuples, names=["k", "n"])
         self.psi = pd.DataFrame(index=index, data={"amplitude": self.psi})
@@ -115,13 +112,16 @@ class IFM(BaseModel):
 
     def measure_at(self, n: int = None, qubits: str = None) -> float:
         mask = np.ones(len(self.psi))
-        if n is not None:
+
+        if n is not None:       # Measure the photon.
             mask *= self.psi.index.map(lambda x: 1 if x[1] == n else 0)
-        if qubits is not None:
+        if qubits is not None:  # Measure the qubits.
             mask *= self.psi.ket.apply(
                 lambda x: 1 if x.split(self.sep)[0] == qubits else 0)
+
         amplitude = mask * self.psi.amplitude
         probability = amplitude @ np.conjugate(amplitude)
+
         return self.iround(probability)
 
     def measure(self):
@@ -130,30 +130,29 @@ class IFM(BaseModel):
         qubit_outcomes = [
             self.int_to_binary(k, self.N) for k in range(2**self.N)]
 
+        # Overall probability of a photon click at `n`.
         self.outcomes = pd.DataFrame(
             index=pd.Index(range(self.N+1), name='n'),
             columns=["probability"]+qubit_outcomes
             )
         self.outcomes["probability"] = self.outcomes.index.map(
             lambda n: self.measure_at(n=n))
-        
         assert np.isclose(self.outcomes["probability"].sum(), 1)
-        
+
+        # Fine grain the probability of a photon click at `n` over the
+        # different qubits.
         self.outcomes[qubit_outcomes] = pd.DataFrame(
-            [qubit_outcomes] * len(self.outcomes), 
+            [qubit_outcomes] * len(self.outcomes),
             index=self.outcomes.index, columns=qubit_outcomes)
-        
         for outcome in qubit_outcomes:
             self.outcomes[outcome] = self.outcomes.apply(
                 lambda x: self.measure_at(x.name, x[outcome]), axis=1)
-        
         assert np.isclose(
             self.outcomes[qubit_outcomes].sum(axis=1),
             self.outcomes["probability"]).all()
 
     def realign(self):
         print("==== Measure")
-        
 
     @staticmethod
     def symmetric_BS(N, add_qubits: bool = True):
@@ -183,7 +182,7 @@ class IFM(BaseModel):
         """
         assert 2**N >= k
         return bin(k)[2:].zfill(N)[-N:]
-    
+
     @staticmethod
     def iround(c: complex, tol=1e-9) -> complex:
         if abs(np.imag(c)) < tol:
@@ -191,23 +190,43 @@ class IFM(BaseModel):
         if abs(np.real(c)) < tol:
             c = np.imag(c)
         return c
-    
+
     @staticmethod
     def norm(psi) -> float:
         return np.sqrt(psi @ np.conjugate(psi))
 
-#%% Experiment
+
+def prep_params(psi_qubits = list, psi_photon: list = None, N: int = None) -> dict:
+
+    if isinstance(N, int):
+        return dict(N=N)
+
+    if psi_photon is None:
+        psi_photon = np.array([0]+[1]*len(psi_qubits), dtype=complex)
+
+    assert len(psi_photon) - 1 == len(psi_qubits)
+
+    params = dict(
+        psi_photon=psi_qubits,
+        psi_qubits=np.array(
+            [int(k) for k in ''.join(psi_qubits)]))
+    params['psi_qubits'] = params['psi_qubits'].reshape(
+        len(params['psi_photon'])-1, 2)
+
+    return params
+
+
+# %% Experiment
 
 if __name__ == "__main__":
-    params = dict(
-        psi_photon=np.array([int(k) for k in '0111']),
-        psi_qubits=np.array(
-            [int(k) for k in ''.join(['01', '10', '01'])]).reshape(3,2))
-    # params = dict(N=3)
+
+    # params = prep_params(N=4)
+    params = prep_params([(1,1)]*3)
+    
 
     ifm = IFM(**params)
     ifm()
     psi = ifm.psi
     outcomes = ifm.outcomes
-    
-    print(outcomes)
+
+    print(outcomes)    
