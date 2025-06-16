@@ -13,10 +13,10 @@ from typing import Optional
 
 
 class IFM(BaseModel):
-    N: int = None                                   # Number of qubits
-    psi_photon: object = None                       # Initial photonic state
-    psi_qubits: object = None                       # Initial qubit states
+    psi_photon: object                              # Initial photonic state
+    psi_qubits: object                          # Initial qubit states
     psi: Optional[object] = None                    # Overall state
+    N: int = None                                   # Number of qubits
     sep: str = '⊗'                                  # Qubit-photon separator
     interaction: str | None = 'Elitzur-Vaidman'     # Photon-qubit interaction
     outcomes: object = None                         # Summary of outcomes
@@ -151,8 +151,25 @@ class IFM(BaseModel):
             self.outcomes[qubit_outcomes].sum(axis=1),
             self.outcomes["probability"]).all()
 
+    
+    @staticmethod
+    def foo(psi_qubits: np.array):
+        def invert(qubit: np.array):
+            return np.array(
+                [[np.conjugate(qubit[0]), np.conjugate(qubit[1])],
+                 [-qubit[1], qubit[0]]],
+                dtype=complex)        
+        
+        rotation = invert(psi_qubits[0])
+        for q in psi_qubits[1:]:
+            rotation = np.kron(rotation, invert(q))
+        rotation = np.kron(rotation, np.eye(len(psi_qubits)+1))
+        return rotation
+
     def realign(self):
         print("==== Measure")
+        rotation = self.foo(self.psi_qubits)
+        self.psi.amplitude = rotation @ self.psi.amplitude
 
     @staticmethod
     def symmetric_BS(N, add_qubits: bool = True):
@@ -196,37 +213,18 @@ class IFM(BaseModel):
         return np.sqrt(psi @ np.conjugate(psi))
 
 
-def prep_params(psi_qubits = list, psi_photon: list = None, N: int = None) -> dict:
-
-    if isinstance(N, int):
-        return dict(N=N)
-
-    if psi_photon is None:
-        psi_photon = np.array([0]+[1]*len(psi_qubits), dtype=complex)
-
-    assert len(psi_photon) - 1 == len(psi_qubits)
-
-    params = dict(
-        psi_photon=psi_qubits,
-        psi_qubits=np.array(
-            [int(k) for k in ''.join(psi_qubits)]))
-    params['psi_qubits'] = params['psi_qubits'].reshape(
-        len(params['psi_photon'])-1, 2)
-
-    return params
-
-
-# %% Experiment
-
 if __name__ == "__main__":
 
-    # params = prep_params(N=4)
-    params = prep_params([(1,1)]*3)
-    
-
-    ifm = IFM(**params)
+    N = 4
+    ifm = IFM(
+        psi_photon=np.array([0]+[1]*N, dtype=complex),
+        psi_qubits=np.array([[1, 1]]*N), dtype=complex,
+        )
     ifm()
     psi = ifm.psi
     outcomes = ifm.outcomes
 
-    print(outcomes)    
+    print(outcomes)
+
+# %% Experiment
+
