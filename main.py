@@ -13,13 +13,14 @@ from typing import Optional
 
 
 class IFM(BaseModel):
-    psi_photon: object                              # Initial photonic state
-    psi_qubits: object                          # Initial qubit states
+    psi_photon: list                                # Initial photonic state
+    psi_qubits: list                                # Initial qubit states
     psi: Optional[object] = None                    # Overall state
     N: int = None                                   # Number of qubits
     sep: str = '⊗'                                  # Qubit-photon separator
     interaction: str | None = 'Elitzur-Vaidman'     # Photon-qubit interaction
     outcomes: object = None                         # Summary of outcomes
+    realign_bool: bool = True
 
     def __call__(self):
 
@@ -29,12 +30,14 @@ class IFM(BaseModel):
             self.psi_photon = np.hstack([np.zeros(1), np.ones(self.N)])
             self.psi_qubits = np.ones([self.N, 2])
         else:
+            self.psi_photon = np.array(self.psi_photon, dtype=complex)
+            self.psi_qubits = np.array(self.psi_qubits, dtype=complex)
             self.N = len(self.psi_qubits)
 
         self.validate()
 
-        print("psi_photon =", self.psi_photon, sep='\n')
-        print("psi_qubits =", self.psi_qubits, sep='\n')
+        # print("psi_photon =", self.psi_photon, sep='\n')
+        # print("psi_qubits =", self.psi_qubits, sep='\n')
 
         # Assemble the overall state.
         psi_qubits = reduce(np.kron, self.psi_qubits)
@@ -48,8 +51,8 @@ class IFM(BaseModel):
 
         self.interact()         # The photon and qubit states interact.
         self.beam_split()       # The photon undergoes a beam splitting.
-        self.measure()          # Measure.
-        self.realign()          # The qubits are realigned.
+        if self.realign_bool:
+            self.realign()      # The qubits are realigned.
         self.measure()          # Measure.
 
     def validate(self):
@@ -64,7 +67,7 @@ class IFM(BaseModel):
             norm_photon = np.sqrt(
                 self.psi_photon @ np.conjugate(self.psi_photon))
             assert np.isclose(norm_photon, 1)
-            print("Normalizing the photonic state.")
+            # print("Normalizing the photonic state.")
 
         # Normalize the qubit states.
         norm_qubits = self.psi_qubits * np.conjugate(self.psi_qubits)
@@ -76,11 +79,11 @@ class IFM(BaseModel):
             norm_qubits = np.sqrt(norm_qubits.sum(axis=1))
             assert np.all(
                 np.isclose(norm_qubits, np.ones(self.psi_qubits.shape[0])))
-            print("Normalizing the qubits states.")
+            # print("Normalizing the qubits states.")
 
     def interact(self):
 
-        print(f"==== Interact ({self.interaction})")
+        # print(f"==== Interact ({self.interaction})")
 
         match self.interaction:
             case "Elitzur-Vaidman":
@@ -101,13 +104,13 @@ class IFM(BaseModel):
                 pass
 
         norm = self.norm(self.psi.amplitude)
-        print("Norm before normalization:", norm)
+        # print("Norm before normalization:", norm)
         self.psi.amplitude = self.psi.amplitude / norm
         norm = self.norm(self.psi.amplitude)
-        print("Norm after normalization:", norm)
+        # print("Norm after normalization:", norm)
 
     def beam_split(self):
-        print("==== Beam-split")
+        # print("==== Beam-split")
         self.psi.amplitude = self.symmetric_BS(self.N) @ self.psi.amplitude
 
     def measure_at(self, n: int = None, qubits: str = None) -> float:
@@ -125,7 +128,7 @@ class IFM(BaseModel):
         return self.iround(probability)
 
     def measure(self):
-        print("==== Measure")
+        # print("==== Measure")
 
         qubit_outcomes = [
             self.int_to_binary(k, self.N) for k in range(2**self.N)]
@@ -150,10 +153,11 @@ class IFM(BaseModel):
         assert np.isclose(
             self.outcomes[qubit_outcomes].sum(axis=1),
             self.outcomes["probability"]).all()
+        self.outcomes = self.outcomes.T
 
     
     @staticmethod
-    def foo(psi_qubits: np.array):
+    def rotate(psi_qubits: np.array):
         def invert(qubit: np.array):
             return np.array(
                 [[np.conjugate(qubit[0]), np.conjugate(qubit[1])],
@@ -167,8 +171,8 @@ class IFM(BaseModel):
         return rotation
 
     def realign(self):
-        print("==== Measure")
-        rotation = self.foo(self.psi_qubits)
+        # print("==== Realign")
+        rotation = self.rotate(self.psi_qubits)
         self.psi.amplitude = rotation @ self.psi.amplitude
 
     @staticmethod
@@ -201,7 +205,7 @@ class IFM(BaseModel):
         return bin(k)[2:].zfill(N)[-N:]
 
     @staticmethod
-    def iround(c: complex, tol=1e-9) -> complex:
+    def iround(c: complex, tol: float = 1e-9) -> complex:
         if abs(np.imag(c)) < tol:
             c = np.real(c)
         if abs(np.real(c)) < tol:
@@ -215,16 +219,18 @@ class IFM(BaseModel):
 
 if __name__ == "__main__":
 
-    N = 4
+    N = 3
     ifm = IFM(
-        psi_photon=np.array([0]+[1]*N, dtype=complex),
-        psi_qubits=np.array([[1, 1]]*N), dtype=complex,
+        # Equal
+        psi_photon=[0]+[1]*N,
+        psi_qubits=[[1, 1]]*N,
+        realign_bool=1
         )
     ifm()
     psi = ifm.psi
     outcomes = ifm.outcomes
 
-    print(outcomes)
+    print(outcomes.round(3))
 
 # %% Experiment
 
