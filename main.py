@@ -216,21 +216,36 @@ class IFM(BaseModel):
     def norm(psi) -> float:
         return np.sqrt(psi @ np.conjugate(psi))
 
+    def print_outcomes(self, value: tuple = None, decimals: int = 3):
+    
+        df = self.outcomes    
+
+        df['T'] = df.sum(axis=1)
+    
+        if decimals is not None:
+            df = df.round(decimals)
+        
+        if value is not None:
+            df = df.replace(value[0], value[1])
+        
+        print(df)
 
 if __name__ == "__main__":
 
-    N = 3
-    ifm = IFM(
-        # Equal
-        psi_photon=[0]+[1]*N,
-        psi_qubits=[[1, 1]]*N,
-        realign_bool=1
-        )
-    ifm()
-    psi = ifm.psi
-    outcomes = ifm.outcomes
-
-    print(outcomes.round(3))
+    for N in range(2, 6):
+        for realign_bool in {True,}:
+            print(f"{N = }, {realign_bool = }:")
+            ifm = IFM(
+                # Equal
+                psi_photon=[0]+[1]*N,
+                psi_qubits=[[1, 1]]*N,
+                realign_bool=realign_bool
+                )
+            ifm()
+            psi = ifm.psi
+            outcomes = ifm.outcomes
+            ifm.print_outcomes((0, '◯'), decimals=3)
+            print()
 
 # %% Experiment
 
