@@ -20,7 +20,7 @@ class IFM(BaseModel):
     sep: str = '⊗'                                  # Qubit-photon separator
     interaction: str | None = 'Elitzur-Vaidman'     # Photon-qubit interaction
     outcomes: object = None                         # Summary of outcomes
-    realign_bool: bool = True
+    steps: set = ('interact', 'beam_split', 'realign', 'measure')
 
     def __call__(self):
 
@@ -36,9 +36,6 @@ class IFM(BaseModel):
 
         self.validate()
 
-        # print("psi_photon =", self.psi_photon, sep='\n')
-        # print("psi_qubits =", self.psi_qubits, sep='\n')
-
         # Assemble the overall state.
         psi_qubits = reduce(np.kron, self.psi_qubits)
         self.psi = np.kron(psi_qubits, self.psi_photon)
@@ -49,11 +46,14 @@ class IFM(BaseModel):
         self.psi['ket'] = self.psi.index.map(
             lambda k: self.int_to_binary(k[0], self.N)+self.sep+str(k[1]))
 
-        self.interact()         # The photon and qubit states interact.
-        self.beam_split()       # The photon undergoes a beam splitting.
-        if self.realign_bool:
+        if 'interact' in self.steps:
+            self.interact()     # The photon and qubit states interact.
+        if 'beam_split' in self.steps:
+            self.beam_split()   # The photon undergoes a beam splitting.
+        if 'realign' in self.steps:
             self.realign()      # The qubits are realigned.
-        self.measure()          # Measure.
+        if 'measure' in self.steps:
+            self.measure()      # Measure.
 
     def validate(self):
 
@@ -230,22 +230,22 @@ class IFM(BaseModel):
         
         print(df)
 
-if __name__ == "__main__":
+if __name__ == "__main__":    
 
-    for N in range(2, 6):
-        for realign_bool in {True,}:
-            print(f"{N = }, {realign_bool = }:")
-            ifm = IFM(
-                # Equal
-                psi_photon=[0]+[1]*N,
-                psi_qubits=[[1, 1]]*N,
-                realign_bool=realign_bool
-                )
-            ifm()
-            psi = ifm.psi
-            outcomes = ifm.outcomes
-            ifm.print_outcomes((0, '◯'), decimals=3)
-            print()
+    for psi_qubits in ([0,1], [1,0], [1,1]):
+        for N in range(2, 4):
+            for realign in {True, False}:
+                print(f"{psi_qubits = }, {N = }, {realign = }:")
+                ifm = IFM(
+                    psi_photon=[0]+[1]*N,
+                    psi_qubits=[psi_qubits]*N,
+                    steps=('interact', 'beam_split', 'realign' if realign else None, 'measure')
+                    )
+                ifm()
+                psi = ifm.psi
+                outcomes = ifm.outcomes
+                ifm.print_outcomes((0, '◯'), decimals=3)
+                print()
 
 # %% Experiment
 
