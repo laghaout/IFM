@@ -229,12 +229,26 @@ class IFM(BaseModel):
             df = df.replace(value[0], value[1])
         
         print(df)
+        
+        return df
 
 if __name__ == "__main__":    
 
-    for psi_qubits in ([0,1], [1,0], [1,1]):
-        for N in range(2, 4):
-            for realign in {True, False}:
+    # N = 3
+    # psi_qubits = [1,0]
+    # realign = False
+    # ifm = IFM(
+    #     psi_photon=[0]+[1]*N,
+    #     psi_qubits=[psi_qubits]*N,
+    #     steps=('interactXXX', 'beam_split', 'realign' if realign else None, 'measure')
+    #     )
+    # ifm()
+    # ifm.print_outcomes((0, '◯'), decimals=3)
+    
+    outcomes = dict()
+    for psi_qubits in ([1,1],):
+        for N in range(2, 7):
+            for realign in {False,}:
                 print(f"{psi_qubits = }, {N = }, {realign = }:")
                 ifm = IFM(
                     psi_photon=[0]+[1]*N,
@@ -243,8 +257,12 @@ if __name__ == "__main__":
                     )
                 ifm()
                 psi = ifm.psi
-                outcomes = ifm.outcomes
-                ifm.print_outcomes((0, '◯'), decimals=3)
+                temp_outcome = ifm.outcomes
+                temp_outcome['counts'] = temp_outcome.index.map(
+                    lambda x: x.count('1'))
+                temp_outcome.sort_values('counts', inplace=True)
+                outcomes[(N, realign)] = temp_outcome
+                ifm.print_outcomes((0, '◯'), decimals=12)
                 print()
 
 # %% Experiment
