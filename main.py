@@ -216,11 +216,15 @@ class IFM(BaseModel):
     def norm(psi) -> float:
         return np.sqrt(psi @ np.conjugate(psi))
 
-    def print_outcomes(self, value: tuple = None, decimals: int = 3):
+    def print_outcomes(self, value: tuple = None, decimals: int = 12):
     
         df = self.outcomes    
 
         df['T'] = df.sum(axis=1)
+
+        df['counts'] = df.index.map(
+            lambda x: x.count('1'))
+        df.sort_values('counts', inplace=True)
     
         if decimals is not None:
             df = df.round(decimals)
@@ -246,9 +250,10 @@ if __name__ == "__main__":
     # ifm.print_outcomes((0, '◯'), decimals=3)
     
     outcomes = dict()
+    temp_outcome = dict()
     for psi_qubits in ([1,1],):
         for N in range(2, 7):
-            for realign in {False,}:
+            for realign in {True,}:
                 print(f"{psi_qubits = }, {N = }, {realign = }:")
                 ifm = IFM(
                     psi_photon=[0]+[1]*N,
@@ -257,10 +262,7 @@ if __name__ == "__main__":
                     )
                 ifm()
                 psi = ifm.psi
-                temp_outcome = ifm.outcomes
-                temp_outcome['counts'] = temp_outcome.index.map(
-                    lambda x: x.count('1'))
-                temp_outcome.sort_values('counts', inplace=True)
+                temp_outcome[N] = ifm.outcomes
                 outcomes[(N, realign)] = temp_outcome
                 ifm.print_outcomes((0, '◯'), decimals=12)
                 print()
